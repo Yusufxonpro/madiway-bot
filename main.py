@@ -70,7 +70,7 @@ def load_yuk_ombori():
 
 def save_yuk_ombori(data):
     with open(YUK_OMBORI_FILE, "w", encoding="utf-8") as f:
-        json.dump(f, ensure_ascii=False, indent=4)
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 YUK_OMBORI = load_yuk_ombori()
 
@@ -204,10 +204,8 @@ async def send_all(chat_id, message, caption, kb, t_id=None):
     p_id = yuk_cfg.get("photo_id")
     
     if p_id:
-        # Agar admin rasm o'rnatgan bo'lsa, yukni o'sha rasm bilan majburiy yuborish
         await bot.send_photo(chat_id, p_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
     else:
-        # Agar rasm o'rnatilmagan bo'lsa, asl holatda yuborish
         if message.photo: await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
         elif message.video: await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
         else: await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
@@ -245,14 +243,12 @@ async def process_duration(message: types.Message, state: FSMContext):
         save_yuk_ombori(YUK_OMBORI)
         cap = get_premium_caption(txt[:150] + "...", duration_text=duration)
         await send_all(CHANNEL_ID, orig_msg, cap, get_channel_kb(m_id))
-        await message.answer("✅ Kanalga muvaffaqiyatli yuborildi!", reply_markup=types.ReplyKeyboardRemove())
 
     # 2. BITTA TOPICGA TASHLASh
     elif prev_state == MadiWayStates.kutish_bitta_topic_yuk.state:
         tid = data.get("target_topic_id")
         cap = get_premium_caption(txt, duration_text=duration)
         await send_all(GROUP_ID, orig_msg, cap, get_channel_kb(), tid)
-        await message.answer("✅ Tanlangan bo'limga yuborildi!", reply_markup=types.ReplyKeyboardRemove())
 
     # 3. HAMMA TOPICGA TASHLASh
     elif prev_state == MadiWayStates.kutish_hamma_topic_yuk.state:
@@ -262,7 +258,6 @@ async def process_duration(message: types.Message, state: FSMContext):
                 await send_all(GROUP_ID, orig_msg, cap, get_channel_kb(), tid)
                 await asyncio.sleep(0.3)
             except: continue
-        await message.answer("✅ Barcha bo'limlarga tarqatildi!", reply_markup=types.ReplyKeyboardRemove())
 
     # 4. KANAL + HAMMA TOPICGA TASHLASh
     elif prev_state == MadiWayStates.kutish_kanal_va_hamma_topic.state:
@@ -270,19 +265,18 @@ async def process_duration(message: types.Message, state: FSMContext):
         YUK_OMBORI[m_id] = txt
         save_yuk_ombori(YUK_OMBORI)
         
-        # Kanalga qisqa yuborish
         cap_chan = get_premium_caption(txt[:150] + "...", duration_text=duration)
         await send_all(CHANNEL_ID, orig_msg, cap_chan, get_channel_kb(m_id))
         
-        # Topiclar guruhiga to'liq yuborish
         cap_group = get_premium_caption(txt, duration_text=duration)
         for n, tid in TOPICS.items():
             try: 
                 await send_all(GROUP_ID, orig_msg, cap_group, get_channel_kb(), tid)
                 await asyncio.sleep(0.3)
             except: continue
-        await message.answer("🚀 Kanal va barcha bo'limlarga muvaffaqiyatli tarqatildi!", reply_markup=types.ReplyKeyboardRemove())
 
+    # SIZ SO'RAGAN TASDIQLASH JAVOBI
+    await message.answer("🚀 <b>Muvaffaqiyatli tasdiqlandi! Yuklar tizimga yuborildi.</b>", reply_markup=types.ReplyKeyboardRemove())
     await state.clear()
 
 @dp.callback_query(F.data.startswith('show_full_'))
@@ -293,7 +287,6 @@ async def full(cb: types.CallbackQuery):
     except: await cb.message.answer(cap)
 
 async def main():
-    # --- TERMINALDA ISHGA TUSHGANINI BILDIRISH ---
     print("-----------------------------------------")
     print("Bot ishga tushdi!")
     print("MADIWAY logistika tizimi faol holatda.")
