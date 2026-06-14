@@ -16,13 +16,13 @@ from aiogram.exceptions import TelegramAPIError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- SOZLAMALAR ---
+# --- SOZLAMALAR (YANGILANGAN ID'LAR) ---
 BOT_TOKEN = "8724439262:AAFGNuQQ4IxdqitlcCEtkHLsvyFwSPg_b1c"
 CHANNEL_USER = "MADIWAYy"  
-GROUP_ID = -1002130310815  
-CHANNEL_ID = -1002120000000
+GROUP_ID = -1003963001370    # Guruh ID yangilandi
+CHANNEL_ID = -1003996104316  # Kanal ID yangilandi
 
-ADMIN_ID = 6977836294         
+ADMIN_ID = 6977836294          
 MADIWAY_ADMIN_ID = 8112179116  
 
 bot = Bot(
