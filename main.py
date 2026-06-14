@@ -9,6 +9,7 @@ from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties # Yangi aiogram uchun kerak
 
 # Loglarni sozlash
 logging.basicConfig(level=logging.INFO)
@@ -19,11 +20,14 @@ CHANNEL_USER = "MADIWAYy"
 GROUP_ID = "-1002130310815"
 CHANNEL_ID = "-1002120000000"
 
-# Adminlarning Telegram ID raqamlari
-ADMIN_ID = 6977836294         # Yusufxonpro ID
-MADIWAY_ADMIN_ID = 8112179116  # madiways ID
+ADMIN_ID = 6977836294         
+MADIWAY_ADMIN_ID = 8112179116  
 
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+# YANGI AIOGRAM STANDARTI (Xatoni tuzatuvchi qism)
+bot = Bot(
+    token=BOT_TOKEN, 
+    default=DefaultBotProperties(parse_mode="HTML")
+)
 dp = Dispatcher(storage=MemoryStorage())
 
 uzb_tz = pytz.timezone('Asia/Tashkent')
@@ -36,7 +40,7 @@ DEFAULT_TEXT = (
     "Yuk tashlash va boshqarish paneli faol holatda."
 )
 
-# --- GLOBAL START SOZLAMALARINI BOSHQARISH ---
+# --- GLOBAL START SOZLAMALARI ---
 def load_start_settings():
     if os.path.exists(START_SETTINGS_FILE):
         with open(START_SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -47,12 +51,11 @@ def save_start_settings(data):
     with open(START_SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- PREMIUM YUK MATNI FORMATI ---
+# --- FORMATLASH ---
 def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡𝗜"):
     now = datetime.now(uzb_tz)
     sana_soat = now.strftime("📅 %Y-%m-%d  🕒 %I:%M %p") 
-    
-    caption = (
+    return (
         f"⭐️ <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | {status_label}</b> ⭐️\n"
         f"───────────────────────\n"
         f"{main_text}\n"
@@ -60,16 +63,13 @@ def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡�
         f"⏳ Vaqt: {sana_soat}\n"
         f"📢 Kanalimiz: https://t.me/{CHANNEL_USER}"
     )
-    return caption
 
 def get_channel_kb(msg_id=None):
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[])
     buttons = []
     if msg_id:
         buttons.append([types.InlineKeyboardButton(text="⭐️ Yukni to'liq ko'rish", callback_data=f"show_full_{msg_id}")])
     buttons.append([types.InlineKeyboardButton(text="📢 Kanalga qo'shilish", url=f"https://t.me/{CHANNEL_USER}")])
-    kb.inline_keyboard = buttons
-    return kb
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 YUK_OMBORI = {}
 
@@ -86,192 +86,102 @@ TOPICS = {
     "🇬🇪 Gruziya": 18, "📣 Elon berish": 1
 }
 
-# ----------------- INTELLECTUAL START ENGINE -----------------
-@dp.message_handler(Command("start"))
-async def intelligent_start(message: types.Message, state: FSMContext):
+# --- HANDLERS ---
+@dp.message(Command("start"))
+async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     start_data = load_start_settings()
     
-    # ADMINLAR UCHUN
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="⚙️ Start xabarni sozlash (GLOBAL)", callback_data="btn_add_start_msg")],
-            [types.InlineKeyboardButton(text="⭐️ Kanalga yuk tashlash", callback_data="btn_kanal_tashlash")],
-            [types.InlineKeyboardButton(text="✨ Alohida bitta Topicga yuborish", callback_data="btn_bitta_topic")],
-            [types.InlineKeyboardButton(text="💥 Hammasiga bittada yuborish", callback_data="btn_hamma_topic")],
-            [types.InlineKeyboardButton(text="🚀 Kanal va Hamma Topicga baravar", callback_data="btn_kanal_va_hamma")]
+            [types.InlineKeyboardButton(text="⚙️ Start sozlash", callback_data="btn_add_start_msg")],
+            [types.InlineKeyboardButton(text="⭐️ Kanalga yuk", callback_data="btn_kanal_tashlash")],
+            [types.InlineKeyboardButton(text="✨ Bitta Topicga", callback_data="btn_bitta_topic")],
+            [types.InlineKeyboardButton(text="💥 Hammasiga", callback_data="btn_hamma_topic")],
+            [types.InlineKeyboardButton(text="🚀 Kanal + Hammasi", callback_data="btn_kanal_va_hamma")]
         ])
-        await message.answer("💻 <b><b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b></b>\n───────────────────────\nBoshqaruv paneli faol:", reply_markup=kb)
-        
-    # ODDIY FOYDALANUVCHILAR UCHUN
+        await message.answer("💻 <b>𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
     else:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="📢 Kanalga qo'shilish", url=f"https://t.me/{CHANNEL_USER}")],
+            [types.InlineKeyboardButton(text="📢 Kanal", url=f"https://t.me/{CHANNEL_USER}")],
             [types.InlineKeyboardButton(text="🛒 Guruhni sotib olish", callback_data="btn_sotib_olish")]
         ])
-        
-        msg_text = start_data.get("text", DEFAULT_TEXT)
-        f_type = start_data.get("type")
-        f_id = start_data.get("file_id")
-        
-        if f_type == "photo" and f_id:
-            await bot.send_photo(chat_id=user_id, photo=f_id, caption=msg_text, reply_markup=kb)
-        elif f_type == "video" and f_id:
-            await bot.send_video(chat_id=user_id, video=f_id, caption=msg_text, reply_markup=kb)
-        elif f_type == "document" and f_id:
-            await bot.send_document(chat_id=user_id, document=f_id, caption=msg_text, reply_markup=kb)
-        else:
-            await bot.send_message(chat_id=user_id, text=msg_text, reply_markup=kb)
+        t, f_type, f_id = start_data.get("text"), start_data.get("type"), start_data.get("file_id")
+        if f_type == "photo" and f_id: await message.answer_photo(f_id, caption=t, reply_markup=kb)
+        elif f_type == "video" and f_id: await message.answer_video(f_id, caption=t, reply_markup=kb)
+        else: await message.answer(t or DEFAULT_TEXT, reply_markup=kb)
 
-# ----------------- CALLBACK CONTROL HUB -----------------
 @dp.callback_query(F.data.startswith('btn_'))
-async def handle_panels(callback_query: types.CallbackQuery, state: FSMContext):
-    await callback_query.answer()
-    data = callback_query.data
-    
-    if data == "btn_sotib_olish":
+async def btns(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.data == "btn_sotib_olish":
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="👤 @madiways", url="https://t.me/madiways")],
             [types.InlineKeyboardButton(text="💻 @Yusufxonpro", url="https://t.me/Yusufxonpro")]
         ])
-        await callback_query.message.answer("🛒 <b>Guruhni sotib olish yoki hamkorlik bo'yicha adminlarga yozing:</b>", reply_markup=kb)
-    elif data == "btn_add_start_msg":
-        await callback_query.message.answer("⚙️ <b>GLOBAL START XABARINI YUBORING</b>\n\nIstalgan formatda rasm, video yoki matn yuborishingiz mumkin.")
+        await callback.message.answer("🛒 Sotib olish bo'yicha murojaat qiling:", reply_markup=kb)
+    elif callback.data == "btn_add_start_msg":
+        await callback.message.answer("⚙️ Yangi start xabarni yuboring (rasm yoki matn):")
         await state.set_state(MadiWayStates.kutish_global_start)
-    elif data == "btn_kanal_tashlash":
-        await callback_query.message.answer("📥 <b>Kanalga boradigan yukni yuboring:</b>")
+    elif callback.data == "btn_kanal_tashlash":
+        await callback.message.answer("📥 Kanal yukini yuboring:")
         await state.set_state(MadiWayStates.kutish_kanal_yuk)
-    elif data == "btn_hamma_topic":
-        await callback_query.message.answer("💥 <b>Hamma guruh bo'limlariga (Topiclar) boradigan yukni yuboring:</b>")
+    elif callback.data == "btn_hamma_topic":
+        await callback.message.answer("💥 Hammasiga yuboring:")
         await state.set_state(MadiWayStates.kutish_hamma_topic_yuk)
-    elif data == "btn_kanal_va_hamma":
-        await callback_query.message.answer("🚀 <b>Ham kanalga, ham hamma guruhlarga boradigan yukni yuboring:</b>")
-        await state.set_state(MadiWayStates.kutish_kanal_va_hamma_topic)
-    elif data == "btn_bitta_topic":
-        buttons = []
-        for name, t_id in TOPICS.items():
-            buttons.append(types.InlineKeyboardButton(text=name, callback_data=f"select_topic_{t_id}"))
-        
-        # Tugmalarni 2 qatordan taxlash
-        inline_kb = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-        kb = types.InlineKeyboardMarkup(inline_keyboard=inline_kb)
-        await callback_query.message.answer("📍 <b>Qaysi guruh bo'limiga yuk tashlamoqchisiz? Tanlang:</b>", reply_markup=kb)
+    elif callback.data == "btn_bitta_topic":
+        btns = [types.InlineKeyboardButton(text=n, callback_data=f"select_topic_{id}") for n, id in TOPICS.items()]
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[btns[i:i+2] for i in range(0, len(btns), 2)])
+        await callback.message.answer("📍 Bo'limni tanlang:", reply_markup=kb)
 
 @dp.callback_query(F.data.startswith('select_topic_'))
-async def topic_selected(callback_query: types.CallbackQuery, state: FSMContext):
-    await callback_query.answer()
-    t_id = callback_query.data.split('_')[2]
-    await state.update_data(target_topic_id=t_id)
-    await callback_query.message.answer("📥 <b>Ushbu bo'lim uchun yukni yuboring:</b>")
+async def topic_sel(callback: types.CallbackQuery, state: FSMContext):
+    await state.update_data(target_topic_id=callback.data.split('_')[2])
+    await callback.message.answer("📥 Yukni yuboring:")
     await state.set_state(MadiWayStates.kutish_bitta_topic_yuk)
 
-# --- CUSTOM GLOBAL START SAVER ---
-@dp.message_handler(MadiWayStates.kutish_global_start)
-async def save_global_start_payload(message: types.Message, state: FSMContext):
-    caption = message.html_text if message.text else (message.caption if message.caption else "")
-    config = {"type": "text", "file_id": None, "text": caption}
-    if message.photo:
-        config["type"] = "photo"
-        config["file_id"] = message.photo[-1].file_id
-    elif message.video:
-        config["type"] = "video"
-        config["file_id"] = message.video.file_id
-    elif message.document:
-        config["type"] = "document"
-        config["file_id"] = message.document.file_id
-    save_start_settings(config)
-    await message.answer("🔥 <b>Global start xabari muvaffaqiyatli saqlandi!</b>")
+# --- SAVERS & FORWARDERS ---
+@dp.message(MadiWayStates.kutish_global_start)
+async def save_start(message: types.Message, state: FSMContext):
+    txt = message.html_text or message.caption or ""
+    cfg = {"type": "text", "file_id": None, "text": txt}
+    if message.photo: cfg.update({"type": "photo", "file_id": message.photo[-1].file_id})
+    elif message.video: cfg.update({"type": "video", "file_id": message.video.file_id})
+    save_start_settings(cfg)
+    await message.answer("✅ Start xabari saqlandi!")
     await state.clear()
 
-# --- YUKLARNI TARQATISH ---
-@dp.message_handler(MadiWayStates.kutish_kanal_yuk)
-async def process_channel_yuk(message: types.Message, state: FSMContext):
-    msg_id = f"chan_{message.message_id}"
-    text = message.html_text if message.text else (message.caption if message.caption else "")
-    YUK_OMBORI[msg_id] = text
-    
-    short_text = text[:150] + "..." if len(text) > 150 else text
-    caption = get_premium_caption(short_text)
-    kb = get_channel_kb(msg_id)
-    
-    await forward_msg(CHANNEL_ID, message, caption, kb)
-    await message.answer("✅ Kanalga yuborildi!")
+async def send_all(chat_id, message, caption, kb, t_id=None):
+    if message.photo: await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+    elif message.video: await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+    else: await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
+
+@dp.message(MadiWayStates.kutish_kanal_yuk)
+async def chan_yuk(message: types.Message, state: FSMContext):
+    txt = message.html_text or message.caption or ""
+    m_id = f"c_{message.message_id}"
+    YUK_OMBORI[m_id] = txt
+    cap = get_premium_caption(txt[:150] + "...")
+    await send_all(CHANNEL_ID, message, cap, get_channel_kb(m_id))
+    await message.answer("✅ Kanalga ketdi!")
     await state.clear()
 
-@dp.message_handler(MadiWayStates.kutish_bitta_topic_yuk)
-async def process_single_topic(message: types.Message, state: FSMContext):
-    user_data = await state.get_data()
-    t_id = int(user_data.get('target_topic_id'))
-    text = message.html_text if message.text else (message.caption if message.caption else "")
-    
-    caption = get_premium_caption(text, "𝗣𝗥𝗘𝗠𝗜𝗨𝗠 𝗘𝗟𝗢𝗡")
-    kb = get_channel_kb()
-    
-    await forward_msg(GROUP_ID, message, caption, kb, t_id)
-    await message.answer("✅ Tanlangan bo'limga yuborildi!")
-    await state.clear()
-
-@dp.message_handler(MadiWayStates.kutish_hamma_topic_yuk)
-async def process_all_topics(message: types.Message, state: FSMContext):
-    text = message.html_text if message.text else (message.caption if message.caption else "")
-    caption = get_premium_caption(text, "𝗚𝗟𝗢𝗕𝗔𝗟 𝗘𝗟𝗢𝗡")
-    kb = get_channel_kb()
-    
-    for name, thread_id in TOPICS.items():
-        try:
-            await forward_msg(GROUP_ID, message, caption, kb, thread_id)
-            await asyncio.sleep(0.3)
+@dp.message(MadiWayStates.kutish_hamma_topic_yuk)
+async def all_yuk(message: types.Message, state: FSMContext):
+    cap = get_premium_caption(message.html_text or message.caption or "")
+    for n, tid in TOPICS.items():
+        try: await send_all(GROUP_ID, message, cap, get_channel_kb(), tid); await asyncio.sleep(0.3)
         except: continue
-    await message.answer("✅ Barcha bo'limlarga tarqatildi!")
+    await message.answer("✅ Hammasiga yuborildi!")
     await state.clear()
 
-@dp.message_handler(MadiWayStates.kutish_kanal_va_hamma_topic)
-async def process_channel_and_all_topics(message: types.Message, state: FSMContext):
-    text = message.html_text if message.text else (message.caption if message.caption else "")
-    caption = get_premium_caption(text, "𝗠𝗔𝗫𝗦𝗨𝗦 𝗧𝗜𝗭𝗜𝗠 𝗘𝗟𝗢𝗡𝗜")
-    kb = get_channel_kb()
-    
-    try:
-        await forward_msg(CHANNEL_ID, message, caption, kb)
-    except: pass
-        
-    for name, thread_id in TOPICS.items():
-        try:
-            await forward_msg(GROUP_ID, message, caption, kb, thread_id)
-            await asyncio.sleep(0.3)
-        except: continue
-    await message.answer("🚀 Kanal va guruhlarga yetkazildi!")
-    await state.clear()
-
-# --- YUKNI TO'LIQ KO'RISH ---
 @dp.callback_query(F.data.startswith('show_full_'))
-async def show_full_yuk(callback_query: types.CallbackQuery):
-    msg_id = callback_query.data.replace("show_full_", "")
-    full_text = YUK_OMBORI.get(msg_id, "⚠️ To'liq ma'lumot keshdan o'chib ketgan.")
-    await callback_query.answer()
-    
-    full_caption = get_premium_caption(full_text, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧")
-    kb = get_channel_kb()
-    
-    try:
-        if callback_query.message.text:
-            await callback_query.message.edit_text(text=full_caption, reply_markup=kb)
-        else:
-            await callback_query.message.edit_caption(caption=full_caption, reply_markup=kb)
-    except:
-        await callback_query.message.answer(full_caption, reply_markup=kb)
-
-# --- TRANSMITTER ---
-async def forward_msg(chat_id, message, caption, kb, thread_id=None):
-    if message.photo:
-        await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-    elif message.video:
-        await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-    elif message.document:
-        await bot.send_document(chat_id, message.document.file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-    else:
-        await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=thread_id)
+async def full(cb: types.CallbackQuery):
+    txt = YUK_OMBORI.get(cb.data.replace("show_full_", ""), "O'chib ketgan")
+    cap = get_premium_caption(txt, "𝗧𝗢'𝗟𝗜𝗤")
+    try: await cb.message.edit_caption(caption=cap, reply_markup=get_channel_kb())
+    except: await cb.message.answer(cap)
 
 async def main():
     await dp.start_polling(bot)
