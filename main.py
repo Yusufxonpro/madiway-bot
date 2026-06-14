@@ -30,7 +30,6 @@ uzb_tz = pytz.timezone('Asia/Tashkent')
 START_SETTINGS_FILE = "global_start_settings.json"
 USERS_DB_FILE = "users_database.json"
 
-# --- YANGILANGAN TO'LOV MATNI (WHATSAPP BILAN) ---
 AUTO_PAYMENT_MESSAGE = (
     "👋 <b>Salom! MadiWay tizimiga to'lov qilish uchun ma'lumotlar:</b>\n\n"
     "💳 <b>UzCard / VISA Card:</b> <code>8600 0000 0000 0000</code>\n"
@@ -105,6 +104,7 @@ class MadiWayStates(StatesGroup):
     kutish_bitta_topic_yuk = State()
     kutish_hamma_topic_yuk = State()
     kutish_yangi_guruh_yuk = State()
+    kutish_yangi_guruh_100_yuk = State() # Yangi holat
     giving_premium_username = State()
     giving_premium_days = State()
 
@@ -129,10 +129,11 @@ async def start_cmd(message: types.Message, state: FSMContext):
             [types.InlineKeyboardButton(text="⭐️ Kanalga yuk", callback_data="btn_kanal_tashlash"),
              types.InlineKeyboardButton(text="✨ Bitta Topicga", callback_data="btn_bitta_topic")],
             [types.InlineKeyboardButton(text="💥 Hammasiga yuborish", callback_data="btn_hamma_topic")],
-            [types.InlineKeyboardButton(text="🆕 Yangi Guruhga xabar", callback_data="btn_yangi_guruh")],
+            [types.InlineKeyboardButton(text="🆕 Yangi Guruhga xabar", callback_data="btn_yangi_guruh"),
+             types.InlineKeyboardButton(text="🚛 Yangi Guruh 100 ta yuk", callback_data="btn_yangi_guruh_100")],
             [types.InlineKeyboardButton(text="🔑 VIP Obuna Aktivlashtirish", callback_data="btn_give_vip")]
         ])
-        await message.answer("💻 <b><b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b></b>", reply_markup=kb)
+        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
     else:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="📊 Tariflarni va guruhlarni tanlash", callback_data="btn_show_tariffs")],
@@ -169,7 +170,6 @@ async def process_vip_username(message: types.Message, state: FSMContext):
     await message.answer("⏱ Muddatni tanlang:", reply_markup=kb)
     await state.set_state(MadiWayStates.giving_premium_days)
 
-# 👑 ADMIN RUXSAT BERGANDA ISHLAYDIGAN VA MUDDATNI ANIQ KO'RSATUVCHI QISM
 @dp.callback_query(MadiWayStates.giving_premium_days, F.data.startswith("set_vip_"))
 async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -191,12 +191,9 @@ async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
         db["premium_count"] = db.get("premium_count", 0) + 1
         save_db(db)
         
-        # Sanani chiroyli formatlash (Kun-Oy-Yil Soat:Minut ko'rinishida)
         formatted_expiry = end_date.strftime("%d-%m-%Y %H:%M")
-        
         await callback.message.answer(f"✅ Muvaffaqiyatli tasdiqlandi!\n👤 Foydalanuvchi obunasi: <b>{formatted_expiry}</b> gacha faol.")
         
-        # Foydalanuvchiga boradigan maxsus tasdiq xabari
         try:
             user_alert = (
                 f"🎉 <b>Siz muvaffaqiyatli tasdiqlandingiz!</b>\n\n"
@@ -257,7 +254,7 @@ async def track_and_redirect(callback: types.CallbackQuery):
     ])
     await callback.message.answer("To'lov tafsilotlarini olish va chekni yuborish uchun quyidagi tugma orqali adminga o'tishingiz mumkin:", reply_markup=kb)
 
-# --- YUKNI TO'LIQ KO'RISH TEKSHIRUVI ---
+# --- YUKNI TO'LIQ KO'RISH TEKSHIRUVI (SOTIB OLISHGA YO'NALTIRISH BILAN) ---
 @dp.callback_query(F.data.startswith('show_full_'))
 async def show_full_yuk(callback: types.CallbackQuery):
     await callback.answer()
@@ -270,10 +267,10 @@ async def show_full_yuk(callback: types.CallbackQuery):
         try: await callback.message.edit_caption(caption=cap, reply_markup=get_channel_kb())
         except: await callback.message.answer(cap)
     else:
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="💰 To'lov qilish (VIP obuna)", callback_data="btn_show_tariffs")]
-        ])
-        await callback.message.answer("❌ <b>Ushbu yukni to'liq ko'rish uchun VIP obunangiz faol bo'lishi kerak!</b>\nIltimos, avval obuna sotib oling.", reply_markup=kb)
+        # Agar VIP bo'lmasa, srazu tariflar bo'limiga yo'naltiriladi va sotib olish so'raladi
+        btns = [types.InlineKeyboardButton(text=n, callback_data=f"pay_group_{id}") for n, id in TOPICS.items() if id != 1]
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[btns[i:i+2] for i in range(0, len(btns), 2)])
+        await callback.message.answer("❌ <b>Ushbu yukni to'liq ko'rish uchun VIP obunangiz faol emas!</b>\n\n👇 To'liq ma'lumotlarni ochish uchun quyidagi tariflardan birini tanlab, sotib oling:", reply_markup=kb)
 
 # --- ADMIN PANEL FUNKSIYALARI ---
 @dp.callback_query(F.data.startswith('btn_'))
@@ -289,8 +286,11 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("💥 Hammasiga yuboring:")
         await state.set_state(MadiWayStates.kutish_hamma_topic_yuk)
     elif callback.data == "btn_yangi_guruh":
-        await callback.message.answer("📥 Yangi guruhga xabarni kiriting:")
+        await callback.message.answer("📥 Yangi guruhga oddiy xabarni kiriting:")
         await state.set_state(MadiWayStates.kutish_yangi_guruh_yuk)
+    elif callback.data == "btn_yangi_guruh_100": # 100 ta yuk holati
+        await callback.message.answer("🚛 Yangi guruh uchun yuk ma'lumotini kiriting (Tugmalar va qisqa link bilan avtomat ketadi):")
+        await state.set_state(MadiWayStates.kutish_yangi_guruh_100_yuk)
     elif callback.data == "btn_bitta_topic":
         btns = [types.InlineKeyboardButton(text=n, callback_data=f"select_topic_{id}") for n, id in TOPICS.items()]
         kb = types.InlineKeyboardMarkup(inline_keyboard=[btns[i:i+2] for i in range(0, len(btns), 2)])
@@ -313,9 +313,9 @@ async def save_start(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def send_all(chat_id, message, caption, kb, t_id=None):
-    if message.photo: await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
-    elif message.video: await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
-    else: await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
+    if message.photo: return await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+    elif message.video: return await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+    else: return await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
 
 @dp.message(MadiWayStates.kutish_kanal_yuk)
 async def chan_yuk(message: types.Message, state: FSMContext):
@@ -325,6 +325,25 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     cap = get_premium_caption(txt[:150] + "...")
     await send_all(CHANNEL_ID, message, cap, get_channel_kb(m_id))
     await message.answer("✅ Kanalga ketdi!")
+    await state.clear()
+
+# ⚡️ YANGI GURUH UCHUN 100 TA YUK TUGMASI LOGIKASI
+@dp.message(MadiWayStates.kutish_yangi_guruh_100_yuk)
+async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
+    txt = message.html_text or message.caption or ""
+    m_id = f"g100_{message.message_id}"
+    YUK_OMBORI[m_id] = txt # To'liq matn keshga saqlanadi
+    
+    # Guruhda ko'rinadigan qisqartirilgan matn va tagiga link
+    short_txt = txt[:150] + "..." if len(txt) > 150 else txt
+    cap = get_premium_caption(short_txt, "𝗫𝗔𝗩𝗙𝗦𝗜𝗭 𝗬𝗨𝗞")
+    
+    try:
+        # Yangi guruhga inline tugmalar (To'liq ko'rish) bilan birga yuboriladi
+        await send_all(NEW_GROUP_ID, message, cap, get_channel_kb(m_id))
+        await message.answer("✅ Xabar yangi guruhga inline tugmalar bilan birga yuborildi!")
+    except Exception as e:
+        await message.answer(f"❌ Guruhga yuborishda xato: {e}")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_hamma_topic_yuk)
