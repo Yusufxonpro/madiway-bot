@@ -12,7 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
 
-# Loglarni yoqamiz - terminalda muammolar ko'rinishi uchun
+# Loglarni yoqamiz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -98,10 +98,18 @@ def get_channel_kb(msg_id=None):
     buttons.append([types.InlineKeyboardButton(text="📢 Kanalga qo'shilish", url=f"https://t.me/{CHANNEL_USER}")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
+# Daqiqa va soatlar uchun maxsus tartiblangan xabar yuborish (Reply) tugmalari
 def get_duration_keyboard():
-    days = ["1 kun", "2 kun", "3 kun", "4 kun", "5 kun", "6 kun", "7 kun", "8 kun", "9 kun", "10 kun", "1 oy", "❌ Atmen qilish"]
-    buttons = [types.KeyboardButton(text=d) for d in days]
-    grid = [buttons[i:i+3] for i in range(0, len(buttons), 3)]
+    time_options = [
+        "1 min", "2 min", "3 min", "4 min", "5 min",
+        "6 min", "7 min", "8 min", "9 min", "10 min",
+        "15 min", "20 min", "22 min", "30 min", "1 soat",
+        "2 soat", "4 soat", "5 soat", "6 soat", "7 soat",
+        "8 soat", "9 soat", "❌ Atmen qilish"
+    ]
+    buttons = [types.KeyboardButton(text=t) for t in time_options]
+    # Tugmalarni qatorda 4 tadan qilib joylashtiramiz
+    grid = [buttons[i:i+4] for i in range(0, len(buttons), 4)]
     return types.ReplyKeyboardMarkup(keyboard=grid, resize_keyboard=True)
 
 class MadiWayStates(StatesGroup):
@@ -181,7 +189,7 @@ async def topic_sel(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("📥 Yukni yuboring:")
     await state.set_state(MadiWayStates.kutish_bitta_topic_yuk)
 
-# --- SAVERS & FORWARDERS ---
+# --- SAVERS ---
 @dp.message(MadiWayStates.kutish_global_start)
 async def save_start(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
@@ -201,12 +209,11 @@ async def save_yuk_photo(message: types.Message, state: FSMContext):
         await message.answer("❌ Iltimos, faqat rasm (photo) yuboring.")
     await state.clear()
 
-# --- ASOSIY VA XATOSIZ YUBORISH TIZIMI (KAFILLI) ---
+# --- KAFILLI YUBORISH TIZIMI ---
 async def send_all(chat_id, photo_file_id, video_file_id, caption, kb, t_id=None):
     yuk_cfg = load_yuk_settings()
     p_id = yuk_cfg.get("photo_id")
     
-    # Agar thread_id xato bo'lsa, xatolikka tushmasligi uchun formatlaymiz
     thread_id = None
     if t_id is not None:
         try:
@@ -215,22 +222,17 @@ async def send_all(chat_id, photo_file_id, video_file_id, caption, kb, t_id=None
             thread_id = None
 
     try:
-        # 1-holat: Admin maxsus doimiy rasm o'rnatgan bo'lsa
         if p_id:
             await bot.send_photo(chat_id=chat_id, photo=p_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-        # 2-holat: Asl xabarda rasm bo'lsa
         elif photo_file_id:
             await bot.send_photo(chat_id=chat_id, photo=photo_file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-        # 3-holat: Asl xabarda video bo'lsa
         elif video_file_id:
             await bot.send_video(chat_id=chat_id, video=video_file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-        # 4-holat: Faqat matn bo'lsa
         else:
             await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb, message_thread_id=thread_id)
         return True
     except TelegramAPIError as e:
         logger.error(f"Xabar yuborishda xatolik (Chat: {chat_id}, Topic: {thread_id}): {e}")
-        # Agar topic xatosi bo'lsa, guruhning asosiy umumiy bo'limiga yuborishga urinib ko'radi
         if "thread" in str(e).lower() and thread_id is not None:
             try:
                 if p_id: await bot.send_photo(chat_id=chat_id, photo=p_id, caption=caption, reply_markup=kb)
@@ -251,12 +253,11 @@ async def process_yuk_content(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     txt = message.html_text or message.caption or ""
     
-    # Rasm yoki Video ID-larini to'liq ajratib olamiz va holat xotirasida saqlaymiz
     p_id = message.photo[-1].file_id if message.photo else None
     v_id = message.video.file_id if message.video else None
     
     await state.update_data(yuk_text=txt, photo_id=p_id, video_id=v_id, prev_state=current_state)
-    await message.answer("📅 <b>Ushbu yuk e'loni necha kun davomida amal qilsin?</b>", reply_markup=get_duration_keyboard())
+    await message.answer("⏱ <b>Ushbu yuk e'loni necha vaqt davomida amal qilsin? Pastdan tanlang:</b>", reply_markup=get_duration_keyboard())
     await state.set_state(MadiWayStates.kutish_muddat)
 
 @dp.message(MadiWayStates.kutish_muddat)
@@ -277,7 +278,6 @@ async def process_duration(message: types.Message, state: FSMContext):
 
     # 1. KANALGA YUK TASHLASH
     if prev_state == MadiWayStates.kutish_kanal_yuk.state:
-        # Generatsiya qilingan unikal kalit xavfsizligi
         m_id = f"c_{int(datetime.now().timestamp())}"
         YUK_OMBORI[m_id] = txt
         save_yuk_ombori(YUK_OMBORI)
@@ -323,11 +323,10 @@ async def process_duration(message: types.Message, state: FSMContext):
         if sent_count > 0:
             success_flag = True
 
-    # Natijani qaytarish logikasi
     if success_flag:
         await message.answer("🚀 <b>Muvaffaqiyatli tasdiqlandi! Yuklar tizimga yuborildi.</b>", reply_markup=types.ReplyKeyboardRemove())
     else:
-        await message.answer("❌ <b>Xatolik yuz berdi!</b> Bot guruh yoki kanalga ma'lumot yubora olmadi. Bot admin huquqlari va guruh xavfsizlik sozlamalarini tekshiring.", reply_markup=types.ReplyKeyboardRemove())
+        await message.answer("❌ <b>Xatolik yuz berdi!</b> Bot guruh yoki kanalga ma'lumot yubora olmadi.", reply_markup=types.ReplyKeyboardRemove())
         
     await state.clear()
 
@@ -340,7 +339,6 @@ async def full(cb: types.CallbackQuery):
 
 async def main():
     print("-----------------------------------------")
-    print("Bot ishga tushdi!")
     print("MADIWAY logistika tizimi faol holatda.")
     print("-----------------------------------------")
     await dp.start_polling(bot)
