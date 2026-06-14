@@ -12,15 +12,14 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
 
-# Loglarni yoqamiz - terminalda xatolar aniq ko'rinishi uchun
+# Loglarni yoqamiz - terminalda muammolar ko'rinishi uchun
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- SOZLAMALAR ---
-# Token va IDlarni tekshirib oling. Guruh va Kanal IDlarida minus bormi, yo'qmi aniqlashtiring.
 BOT_TOKEN = "8724439262:AAFGNuQQ4IxdqitlcCEtkHLsvyFwSPg_b1c"
-CHANNEL_USER = "MADIWAYy"  # t.me/ dan keyingi qismi
-GROUP_ID = -1002130310815  # ID raqam shaklida (int) bo'lgani ma'qul
+CHANNEL_USER = "MADIWAYy"  
+GROUP_ID = -1002130310815  
 CHANNEL_ID = -1002120000000
 
 ADMIN_ID = 6977836294         
@@ -114,8 +113,6 @@ class MadiWayStates(StatesGroup):
     kutish_kanal_va_hamma_topic = State()
     kutish_muddat = State()
 
-# DIQQAT: Agar guruhdagi Topic (Mavzu) IDlari noto'g'ri bo'lsa Telegram xabar yubormaydi.
-# Guruhdagi mavzu havolasini (linkini) nusxalab ko'ring, oxiridagi raqam aynan shu ID hisoblanadi.
 TOPICS = {
     "🌍 Europa": 2, "🇩🇪 Germaniya": 14, "🇷🇺 Rossiya": 4, "🇰🇬 Qirg'iziston": 6,
     "🇰🇿 Kazakistan": 8, "🇮🇷 Eron": 10, "🇹🇯 Tojikston": 12, "🇧🇾 Belarusiya": 16,
@@ -204,27 +201,45 @@ async def save_yuk_photo(message: types.Message, state: FSMContext):
         await message.answer("❌ Iltimos, faqat rasm (photo) yuboring.")
     await state.clear()
 
-# --- ASOSIY YUBORISH FUNKSIYASI (XATOLIKLAR HIMOYaSI BILAN) ---
-async def send_all(chat_id, message, caption, kb, t_id=None):
+# --- ASOSIY VA XATOSIZ YUBORISH TIZIMI (KAFILLI) ---
+async def send_all(chat_id, photo_file_id, video_file_id, caption, kb, t_id=None):
     yuk_cfg = load_yuk_settings()
     p_id = yuk_cfg.get("photo_id")
     
-    # Agar chat superguruh bo'lsa va topic ID berilgan bo'lsa int formatga o'tkazamiz
-    thread_id = int(t_id) if t_id is not None else None
-    
+    # Agar thread_id xato bo'lsa, xatolikka tushmasligi uchun formatlaymiz
+    thread_id = None
+    if t_id is not None:
+        try:
+            thread_id = int(t_id)
+        except ValueError:
+            thread_id = None
+
     try:
+        # 1-holat: Admin maxsus doimiy rasm o'rnatgan bo'lsa
         if p_id:
             await bot.send_photo(chat_id=chat_id, photo=p_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
+        # 2-holat: Asl xabarda rasm bo'lsa
+        elif photo_file_id:
+            await bot.send_photo(chat_id=chat_id, photo=photo_file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
+        # 3-holat: Asl xabarda video bo'lsa
+        elif video_file_id:
+            await bot.send_video(chat_id=chat_id, video=video_file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
+        # 4-holat: Faqat matn bo'lsa
         else:
-            if message.photo: 
-                await bot.send_photo(chat_id=chat_id, photo=message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-            elif message.video: 
-                await bot.send_video(chat_id=chat_id, video=message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=thread_id)
-            else: 
-                await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb, message_thread_id=thread_id)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb, message_thread_id=thread_id)
         return True
     except TelegramAPIError as e:
-        logger.error(f"Xabar yuborishda xatolik yuz berdi (Chat: {chat_id}, Topic: {thread_id}): {e}")
+        logger.error(f"Xabar yuborishda xatolik (Chat: {chat_id}, Topic: {thread_id}): {e}")
+        # Agar topic xatosi bo'lsa, guruhning asosiy umumiy bo'limiga yuborishga urinib ko'radi
+        if "thread" in str(e).lower() and thread_id is not None:
+            try:
+                if p_id: await bot.send_photo(chat_id=chat_id, photo=p_id, caption=caption, reply_markup=kb)
+                elif photo_file_id: await bot.send_photo(chat_id=chat_id, photo=photo_file_id, caption=caption, reply_markup=kb)
+                elif video_file_id: await bot.send_video(chat_id=chat_id, video=video_file_id, caption=caption, reply_markup=kb)
+                else: await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
+                return True
+            except Exception:
+                return False
         return False
 
 # --- REKLAMA VA MUDDAT JARAYONI ---
@@ -236,7 +251,11 @@ async def process_yuk_content(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     txt = message.html_text or message.caption or ""
     
-    await state.update_data(yuk_text=txt, yuk_msg=message, prev_state=current_state)
+    # Rasm yoki Video ID-larini to'liq ajratib olamiz va holat xotirasida saqlaymiz
+    p_id = message.photo[-1].file_id if message.photo else None
+    v_id = message.video.file_id if message.video else None
+    
+    await state.update_data(yuk_text=txt, photo_id=p_id, video_id=v_id, prev_state=current_state)
     await message.answer("📅 <b>Ushbu yuk e'loni necha kun davomida amal qilsin?</b>", reply_markup=get_duration_keyboard())
     await state.set_state(MadiWayStates.kutish_muddat)
 
@@ -249,64 +268,66 @@ async def process_duration(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     txt = data.get("yuk_text")
-    orig_msg = data.get("yuk_msg")
+    orig_p_id = data.get("photo_id")
+    orig_v_id = data.get("video_id")
     prev_state = data.get("prev_state")
     duration = message.text
 
     success_flag = False
 
-    # 1. KANALGA YUK TASHLASh
+    # 1. KANALGA YUK TASHLASH
     if prev_state == MadiWayStates.kutish_kanal_yuk.state:
-        m_id = f"c_{orig_msg.message_id}"
+        # Generatsiya qilingan unikal kalit xavfsizligi
+        m_id = f"c_{int(datetime.now().timestamp())}"
         YUK_OMBORI[m_id] = txt
         save_yuk_ombori(YUK_OMBORI)
         cap = get_premium_caption(txt[:150] + "...", duration_text=duration)
-        res = await send_all(CHANNEL_ID, orig_msg, cap, get_channel_kb(m_id))
+        res = await send_all(CHANNEL_ID, orig_p_id, orig_v_id, cap, get_channel_kb(m_id))
         if res: success_flag = True
 
-    # 2. BITTA TOPICGA TASHLASh
+    # 2. BITTA TOPICGA TASHLASH
     elif prev_state == MadiWayStates.kutish_bitta_topic_yuk.state:
         tid = data.get("target_topic_id")
         cap = get_premium_caption(txt, duration_text=duration)
-        res = await send_all(GROUP_ID, orig_msg, cap, get_channel_kb(), tid)
+        res = await send_all(GROUP_ID, orig_p_id, orig_v_id, cap, get_channel_kb(), tid)
         if res: success_flag = True
 
-    # 3. HAMMA TOPICGA TASHLASh
+    # 3. HAMMA TOPICGA TASHLASH
     elif prev_state == MadiWayStates.kutish_hamma_topic_yuk.state:
         cap = get_premium_caption(txt, duration_text=duration)
         sent_count = 0
         for n, tid in TOPICS.items():
-            res = await send_all(GROUP_ID, orig_msg, cap, get_channel_kb(), tid)
+            res = await send_all(GROUP_ID, orig_p_id, orig_v_id, cap, get_channel_kb(), tid)
             if res:
                 sent_count += 1
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.3)
         if sent_count > 0:
             success_flag = True
 
-    # 4. KANAL + HAMMA TOPICGA TASHLASh
+    # 4. KANAL + HAMMA TOPICGA TASHLASH
     elif prev_state == MadiWayStates.kutish_kanal_va_hamma_topic.state:
-        m_id = f"c_{orig_msg.message_id}"
+        m_id = f"c_{int(datetime.now().timestamp())}"
         YUK_OMBORI[m_id] = txt
         save_yuk_ombori(YUK_OMBORI)
         
         cap_chan = get_premium_caption(txt[:150] + "...", duration_text=duration)
-        await send_all(CHANNEL_ID, orig_msg, cap_chan, get_channel_kb(m_id))
+        await send_all(CHANNEL_ID, orig_p_id, orig_v_id, cap_chan, get_channel_kb(m_id))
         
         cap_group = get_premium_caption(txt, duration_text=duration)
         sent_count = 0
         for n, tid in TOPICS.items():
-            res = await send_all(GROUP_ID, orig_msg, cap_group, get_channel_kb(), tid)
+            res = await send_all(GROUP_ID, orig_p_id, orig_v_id, cap_group, get_channel_kb(), tid)
             if res:
                 sent_count += 1
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.3)
         if sent_count > 0:
             success_flag = True
 
-    # Yakuniy natijani admin panelga qaytarish
+    # Natijani qaytarish logikasi
     if success_flag:
         await message.answer("🚀 <b>Muvaffaqiyatli tasdiqlandi! Yuklar tizimga yuborildi.</b>", reply_markup=types.ReplyKeyboardRemove())
     else:
-        await message.answer("❌ <b>Xatolik yuz berdi!</b> Bot guruh yoki kanalga xabar yubora olmadi. Bot admin huquqlari va guruh xavfsizlik sozlamalarini tekshiring.", reply_markup=types.ReplyKeyboardRemove())
+        await message.answer("❌ <b>Xatolik yuz berdi!</b> Bot guruh yoki kanalga ma'lumot yubora olmadi. Bot admin huquqlari va guruh xavfsizlik sozlamalarini tekshiring.", reply_markup=types.ReplyKeyboardRemove())
         
     await state.clear()
 
