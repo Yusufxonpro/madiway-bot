@@ -2,8 +2,7 @@ import json
 import logging
 import asyncio
 import os
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
@@ -14,6 +13,7 @@ from aiogram.client.default import DefaultBotProperties
 logging.basicConfig(level=logging.INFO)
 
 # --- SOZLAMALAR ---
+# ⚠️ O'zingizning haqiqiy ID raqamlaringizni yozganingizga ishonch hosil qiling!
 BOT_TOKEN = "8724439262:AAFGNuQQ4IxdqitlcCEtkHLsvyFwSPg_b1c"
 CHANNEL_USER = "MADIWAYy" 
 GROUP_ID = "-1002130310815"       
@@ -26,10 +26,13 @@ MADIWAY_ADMIN_ID = 8112179116
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(storage=MemoryStorage())
 
-uzb_tz = pytz.timezone('Asia/Tashkent')
+# Fayllar nomi
 START_SETTINGS_FILE = "global_start_settings.json"
 USERS_DB_FILE = "users_database.json"
-YUK_DB_FILE = "yuklar_database.json" # Yuklar o'chib ketmasligi uchun doimiy baza
+YUK_DB_FILE = "yuklar_database.json"
+
+# Toshkent vaqti uchun UTC+5 offset (pytz xatoliklarining oldini olish uchun eng xavfsiz usul)
+UZB_TZ = timezone(timedelta(hours=5))
 
 AUTO_PAYMENT_MESSAGE = (
     "👋 <b>Salom! MadiWay tizimiga to'lov qilish uchun ma'lumotlar:</b>\n\n"
@@ -44,11 +47,14 @@ AUTO_PAYMENT_MESSAGE = (
     "📞 <b>Tekshirish va aloqa (WhatsApp bor):</b> +998 88 325 80 07"
 )
 
-# --- BAZANI BOSHQARISH ---
+# --- BAZANI BOSHQARISH FUNKSIYALARI ---
 def load_db():
     if os.path.exists(USERS_DB_FILE):
-        with open(USERS_DB_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(USERS_DB_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
     return {"users": {}, "premium_count": 0}
 
 def save_db(data):
@@ -57,8 +63,11 @@ def save_db(data):
 
 def load_yuk_db():
     if os.path.exists(YUK_DB_FILE):
-        with open(YUK_DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(YUK_DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
     return {}
 
 def save_yuk_db(data):
@@ -80,15 +89,22 @@ def check_premium(user_id):
     db = load_db()
     uid = str(user_id)
     if uid in db["users"] and db["users"][uid]["premium_until"]:
-        until_dt = datetime.fromisoformat(db["users"][uid]["premium_until"])
-        if datetime.now(uzb_tz) < until_dt.replace(tzinfo=uzb_tz):
-            return True
+        try:
+            # Vaqt zonalarini bir xil (offset-aware) qilib tekshirish
+            until_dt = datetime.fromisoformat(db["users"][uid]["premium_until"]).astimezone(UZB_TZ)
+            if datetime.now(UZB_TZ) < until_dt:
+                return True
+        except Exception as e:
+            logging.error(f"Premium vaqtini tekshirishda xato: {e}")
     return False
 
 def load_start_settings():
     if os.path.exists(START_SETTINGS_FILE):
-        with open(START_SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(START_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
     return {"type": "text", "file_id": None, "text": "🏔 MadiWay tizimiga xush kelibsiz!"}
 
 def save_start_settings(data):
@@ -96,7 +112,7 @@ def save_start_settings(data):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡𝗜"):
-    now = datetime.now(uzb_tz)
+    now = datetime.now(UZB_TZ)
     sana_soat = now.strftime("📅 %Y-%m-%d  🕒 %I:%M %p") 
     return f"⭐️ <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | {status_label}</b> ⭐️\n───────────────────────\n{main_text}\n───────────────────────\n⏳ Vaqt: {sana_soat}\n📢 Kanal: t.me/{CHANNEL_USER}"
 
@@ -122,6 +138,19 @@ TOPICS = {
     "🇰🇿 Kazakistan": 8, "🇮🇷 Eron": 10, "🇹🇯 Tojikston": 12, "🇧🇾 Belarusiya": 16,
     "🇬🇪 Gruziya": 18, "📣 Elon berish": 1
 }
+
+# --- ASOSIY SAKRASH FUNKSIYASI (XATOSIZ RASM/VIDEO YUBORISH) ---
+async def send_all(chat_id, message, caption, kb, t_id=None):
+    try:
+        if message.photo:
+            return await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+        elif message.video:
+            return await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
+        else:
+            return await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
+    except Exception as e:
+        logging.error(f"Xabar yuborishda xatolik (Chat: {chat_id}): {e}")
+        return None
 
 # --- HANDLERS ---
 @dp.message(Command("start"))
@@ -195,7 +224,7 @@ async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
             break
             
     if found_uid:
-        end_date = datetime.now(uzb_tz) + timedelta(days=days)
+        end_date = datetime.now(UZB_TZ) + timedelta(days=days)
         db["users"][found_uid]["premium_until"] = end_date.isoformat()
         db["premium_count"] = db.get("premium_count", 0) + 1
         save_db(db)
@@ -206,12 +235,13 @@ async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
         try:
             user_alert = (
                 f"🎉 <b>Siz muvaffaqiyatli tasdiqlandingiz!</b>\n\n"
-                f"🚀 Endi MadiWay platformasidan to'liq foydalanishingiz va barcha yuklarni ko'rishingiz mugkin.\n"
+                f"🚀 Endi MadiWay platformasidan to'liq foydalanishingiz va barcha yuklarni ko'rishingiz mumkin.\n"
                 f"⏱ <b>Sizning VIP obuna muddatingiz:</b> <code>{formatted_expiry}</code> gacha amal qiladi.\n\n"
                 f"Omadli va xavfsiz yo'llar tilaymiz! 🚛"
             )
             await bot.send_message(chat_id=int(found_uid), text=user_alert)
-        except: pass
+        except: 
+            pass
     else:
         await callback.message.answer("❌ Foydalanuvchi bot bazasidan topilmadi. U avval botga start bergan bo'lishi kerak!")
     await state.clear()
@@ -253,17 +283,18 @@ async def track_and_redirect(callback: types.CallbackQuery):
         f"🛒 Tanlangan tarif: <b>{days} kunlik</b> (Guruh: {g_id})\n"
         f"➔ Hozir adminga to'lov uchun o'tmoqda."
     )
-    try: await bot.send_message(chat_id=MADIWAY_ADMIN_ID, text=alert_text)
-    except: pass
-    try: await bot.send_message(chat_id=ADMIN_ID, text=alert_text)
-    except: pass
+    for admin in [MADIWAY_ADMIN_ID, ADMIN_ID]:
+        try: 
+            await bot.send_message(chat_id=admin, text=alert_text)
+        except: 
+            pass
     
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🚀 Adminga o'tish (To'lov chekini yuborish)", url="https://t.me/madiways")]
     ])
     await callback.message.answer("To'lov tafsilotlarini olish va chekni yuborish uchun quyidagi tugma orqali adminga o'tishingiz mumkin:", reply_markup=kb)
 
-# --- YUKNI TO'LIQ KO'RISH TEKSHIRUVI (FAYLLI BAZA BILAN INTEGRATSIYA) ---
+# --- VIP TEKSHIRISH VA TO'LIQ MATNNI OCHISH ---
 @dp.callback_query(F.data.startswith('show_full_'))
 async def show_full_yuk(callback: types.CallbackQuery):
     await callback.answer()
@@ -272,18 +303,25 @@ async def show_full_yuk(callback: types.CallbackQuery):
     if check_premium(user_id) or user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         msg_id = callback.data.replace("show_full_", "")
         yuk_db = load_yuk_db()
-        txt = yuk_db.get(msg_id, "⚠️ Ma'lumot topilmadi yoki bazadan o'chib ketgan.")
-        cap = get_premium_caption(txt, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧")
-        try: 
-            await callback.message.edit_caption(caption=cap, reply_markup=get_channel_kb())
-        except: 
-            await callback.message.answer(cap)
+        txt = yuk_db.get(msg_id)
+        
+        if txt:
+            cap = get_premium_caption(txt, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧")
+            try: 
+                if callback.message.photo or callback.message.video:
+                    await callback.message.edit_caption(caption=cap, reply_markup=get_channel_kb())
+                else:
+                    await callback.message.edit_text(text=cap, reply_markup=get_channel_kb())
+            except Exception as e: 
+                await callback.message.answer(cap)
+        else:
+            await callback.message.answer("⚠️ Kechirasiz, ushbu yuk ma'lumotlari bazadan topilmadi!")
     else:
         btns = [types.InlineKeyboardButton(text=n, callback_data=f"pay_group_{id}") for n, id in TOPICS.items() if id != 1]
         kb = types.InlineKeyboardMarkup(inline_keyboard=[btns[i:i+2] for i in range(0, len(btns), 2)])
         await callback.message.answer("❌ <b>Ushbu yukni to'liq ko'rish uchun VIP obunangiz faol emas!</b>\n\n👇 To'liq ma'lumotlarni ochish uchun quyidagi tariflardan birini tanlab, sotib oling:", reply_markup=kb)
 
-# --- ADMIN PANEL FUNKSIYALARI ---
+# --- ADMIN TUGLAMALARI ---
 @dp.callback_query(F.data.startswith('btn_'))
 async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -323,11 +361,6 @@ async def save_start(message: types.Message, state: FSMContext):
     await message.answer("✅ Start xabari saqlandi!")
     await state.clear()
 
-async def send_all(chat_id, message, caption, kb, t_id=None):
-    if message.photo: return await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
-    elif message.video: return await bot.send_video(chat_id, message.video.file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
-    else: return await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
-
 @dp.message(MadiWayStates.kutish_kanal_yuk)
 async def chan_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
@@ -337,18 +370,23 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     yuk_db[m_id] = txt
     save_yuk_db(yuk_db)
     
-    cap = get_premium_caption(txt[:150] + "...")
-    await send_all(CHANNEL_ID, message, cap, get_channel_kb(m_id))
-    await message.answer("✅ Kanalga muvaffaqiyatli ketdi!")
+    short_txt = txt[:150] + "..." if len(txt) > 150 else txt
+    cap = get_premium_caption(short_txt)
+    
+    res = await send_all(CHANNEL_ID, message, cap, get_channel_kb(m_id))
+    if res:
+        await message.answer("✅ Kanalga yuk muvaffaqiyatli ketdi!")
+    else:
+        await message.answer("❌ Kanalga yuborishda xatolik yuz berdi. ID'ni tekshiring.")
     await state.clear()
 
-# ⚡️ YANGI GURUHGA 100 TA YUK LOGIKASI (TUGMALAR BILAN TO'LIQ ISHLAYDI)
+# ⚡️ YANGI GURUHGA 100 TA YUK TUGMASI (KAFOLATLANGAN VA XATOSIZ)
 @dp.message(MadiWayStates.kutish_yangi_guruh_100_yuk)
 async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
+    # Unikal kalit yaratish (baza uchun)
     m_id = f"g100_{message.message_id}"
     
-    # Ma'lumotni doimiy JSON faylga yozamiz (Railway o'chsa ham saqlanadi)
     yuk_db = load_yuk_db()
     yuk_db[m_id] = txt
     save_yuk_db(yuk_db)
@@ -356,34 +394,43 @@ async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
     short_txt = txt[:150] + "..." if len(txt) > 150 else txt
     cap = get_premium_caption(short_txt, "𝗫𝗔𝗩𝗙𝗦𝗜𝗭 𝗬𝗨𝗞")
     
-    try:
-        # Guruhga yuborish majburiy tartibda await qilinadi
-        await send_all(NEW_GROUP_ID, message, cap, get_channel_kb(m_id))
+    res = await send_all(NEW_GROUP_ID, message, cap, get_channel_kb(m_id))
+    if res:
         await message.answer("✅ Xabar yangi guruhga inline tugmalar bilan birga yuborildi!")
-    except Exception as e:
-        await message.answer(f"❌ Guruhga yuborishda xato berdi (Guruh ID raqamini tekshiring): {e}")
+    else:
+        await message.answer(f"❌ Guruhga yuborib bo'lmadi! Guruh ID raqami (<code>{NEW_GROUP_ID}</code>) yoki bot adminligi tekshirilishi kerak.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_hamma_topic_yuk)
 async def all_yuk(message: types.Message, state: FSMContext):
-    cap = get_premium_caption(message.html_text or message.caption or "")
+    txt = message.html_text or message.caption or ""
+    cap = get_premium_caption(txt)
     for n, tid in TOPICS.items():
-        try: 
-            await send_all(GROUP_ID, message, cap, get_channel_kb(), tid)
-            await asyncio.sleep(0.3)
-        except: 
-            continue
-    await message.answer("✅ Hammasiga yuborildi!")
+        await send_all(GROUP_ID, message, cap, get_channel_kb(), tid)
+        await asyncio.sleep(0.3)
+    await message.answer("✅ Barcha topiklarga yuborildi!")
+    await state.clear()
+
+@dp.message(MadiWayStates.kutish_bitta_topic_yuk)
+async def bitta_topic_yuk(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    tid = int(data.get("target_topic_id", 1))
+    txt = message.html_text or message.caption or ""
+    cap = get_premium_caption(txt)
+    
+    await send_all(GROUP_ID, message, cap, get_channel_kb(), tid)
+    await message.answer("✅ Tanlangan topikkka yuborildi!")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_yangi_guruh_yuk)
 async def yangi_guruh_yuk(message: types.Message, state: FSMContext):
-    cap = get_premium_caption(message.html_text or message.caption or "", "YANGI GURUH ELONI")
-    try:
-        await send_all(NEW_GROUP_ID, message, cap, get_channel_kb())
+    txt = message.html_text or message.caption or ""
+    cap = get_premium_caption(txt, "YANGI GURUH ELONI")
+    res = await send_all(NEW_GROUP_ID, message, cap, get_channel_kb())
+    if res:
         await message.answer("✅ Xabar yangi guruhga oddiy shaklda yuborildi!")
-    except Exception as e:
-        await message.answer(f"❌ Xato: {e}")
+    else:
+        await message.answer("❌ Oddiy xabarni yangi guruhga yuborishda xato.")
     await state.clear()
 
 # --- AVTO JAVOB ---
