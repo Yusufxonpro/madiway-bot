@@ -12,12 +12,13 @@ from aiogram.client.default import DefaultBotProperties
 
 logging.basicConfig(level=logging.INFO)
 
-# --- SOZLAMALAR ---
+# --- SOZLAMALAR VA ID RAQAMLAR ---
 BOT_TOKEN = "8724439262:AAFGNuQQ4IxdqitlcCEtkHLsvyFwSPg_b1c"
 CHANNEL_USER = "MADIWAYy" 
-GROUP_ID = "-1002130310815"       
-NEW_GROUP_ID = "-1004370807037"   
-CHANNEL_ID = "-1002120000000"
+
+GROUP_ID = "-1003963001370"        # Asosiy guruh (Topiclar bor guruh)
+NEW_GROUP_ID = "-1004370807037"    # Yangi guruh
+CHANNEL_ID = "-1003996104316"      # MadiWay kanali
 
 ADMIN_ID = 6977836294         
 MADIWAY_ADMIN_ID = 8112179116  
@@ -31,6 +32,7 @@ YUK_DB_FILE = "yuklar_database.json"
 
 UZB_TZ = timezone(timedelta(hours=5))
 
+# --- TO'LOV XABARI (SENING KARTANG JOYLASHTIRILDI) ---
 AUTO_PAYMENT_MESSAGE = (
     "👋 <b>Salom! MadiWay tizimiga to'lov qilish uchun ma'lumotlar:</b>\n\n"
     "💳 <b>UzCard / VISA Card:</b> <code>4916-9903-5000-8311</code>\n"
@@ -50,7 +52,7 @@ TOPICS = {
     "🇬🇪 Gruziya": 18, "📣 Elon berish": 1
 }
 
-# --- BAZA FUNKSIYALARI ---
+# --- MA'LUMOTLAR BAZASI FUNKSIYALARI ---
 def load_db():
     if os.path.exists(USERS_DB_FILE):
         try:
@@ -119,17 +121,16 @@ async def send_all(chat_id, message, caption, kb, t_id=None):
         else:
             return await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
     except Exception as e:
-        logging.error(f"Xabar yuborishda xato: {e}")
+        logging.error(f"Xabar yuborishda xato yuz berdi (Chat: {chat_id}): {e}")
         return None
 
-# --- TOZALANGAN VA YANGILANGAN START ---
+# --- TOZA DEEPLINK START ---
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     register_user(user_id, message.from_user.username, message.from_user.full_name)
     
-    # Guruhdan havola orqali yukni ko'rishga kelganda
     if command.args:
         yuk_id = command.args
         if check_premium(user_id) or user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
@@ -148,7 +149,6 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             await message.answer("❌ <b>Ushbu yukni to'liq ko'rish uchun sizda VIP obuna faol emas!</b>\n\n👇 Davom etish uchun tariflardan birini tanlang va faollashtiring:", reply_markup=kb)
             return
 
-    # Oddiy foydalanuvchi birinchi marta start berganda chiqadigan mutlaqo toza xabar
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="⚙️ Start sozlash", callback_data="btn_add_start_msg"),
@@ -162,17 +162,14 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
         ])
         await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
     else:
-        # Hech qanday boshqa kanallarsiz, faqatgina sening MadiWay menyuing chiqadi!
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="📊 Tariflarni va guruhlarni tanlash", callback_data="btn_show_tariffs")],
             [types.InlineKeyboardButton(text="📢 MadiWay Kanaliga o'tish", url=f"https://t.me/{CHANNEL_USER}")]
         ])
-        
-        # JSON fayldagi eski xabarlarni chetlab o'tib, toza boshlang'ich xabar chiqarish
         clean_text = "🏔 <b>MadiWay logistika tizimiga xush kelibsiz!</b>\n\nYuklar haqida to'liq ma'lumot olish va guruhlarga qo'shilish uchun quyidagi tugmalardan foydalaning:"
         await message.answer(clean_text, reply_markup=kb)
 
-# --- STATISTIKA VA VIP ---
+# --- ADMIN TUGLMALARI VA STATISTIKA ---
 @dp.callback_query(F.data == "btn_stats")
 async def show_stats(callback: types.CallbackQuery):
     await callback.answer()
@@ -224,7 +221,7 @@ async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Foydalanuvchi bot bazasidan topilmadi!")
     await state.clear()
 
-# --- TARIFLAR MENU ---
+# --- TARIFLAR TIZIMI ---
 @dp.callback_query(F.data == "btn_show_tariffs")
 async def show_tariffs_menu(callback: types.CallbackQuery):
     await callback.answer()
@@ -257,7 +254,7 @@ async def track_and_redirect(callback: types.CallbackQuery):
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🚀 Adminga o'tish (Chek yuborish)", url="https://t.me/madiways")]])
     await callback.message.answer("To'lov chekini yuborish uchun adminga o'tishingiz mumkin:", reply_markup=kb)
 
-# --- ADMIN PANEL FUNKSIYALARI ---
+# --- ADMIN PANEL CALL BACK HANDLERS ---
 @dp.callback_query(F.data.startswith('btn_'))
 async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -294,6 +291,7 @@ async def save_start(message: types.Message, state: FSMContext):
     await message.answer("✅ Start xabari saqlandi!")
     await state.clear()
 
+# --- YUK TASHALASH OPERATSIYALARI ---
 @dp.message(MadiWayStates.kutish_kanal_yuk)
 async def chan_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
@@ -303,7 +301,7 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     bot_info = await bot.get_me()
     cap = get_premium_caption(txt[:150] + "...")
     res = await send_all(CHANNEL_ID, message, cap, get_group_kb(bot_info.username, m_id))
-    await message.answer("✅ Kanalga yuborildi!" if res else "❌ Kanal ID xato.")
+    await message.answer("✅ Kanalga muvaffaqiyatli yuborildi!" if res else f"❌ Xato! Kanal ID (`{CHANNEL_ID}`) noto'g'ri yoki bot kanalda admin emas.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_yangi_guruh_100_yuk)
@@ -320,7 +318,7 @@ async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
     if res:
         await message.answer("✅ Yangi guruhga tugmalar bilan ketdi!")
     else:
-        await message.answer(f"❌ Guruhga yuborib bo'lmadi! Bot guruhda (`{NEW_GROUP_ID}`) admin ekanligini qayta tekshiring.")
+        await message.answer(f"❌ Xato! Yangi guruh ID (`{NEW_GROUP_ID}`) noto'g'ri yoki bot guruhda admin emas.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_hamma_topic_yuk)
@@ -347,8 +345,8 @@ async def bitta_topic_yuk(message: types.Message, state: FSMContext):
     
     bot_info = await bot.get_me()
     cap = get_premium_caption(txt[:150] + "...")
-    await send_all(GROUP_ID, message, cap, get_group_kb(bot_info.username, m_id), tid)
-    await message.answer("✅ Topikka yuborildi!")
+    res = await send_all(GROUP_ID, message, cap, get_group_kb(bot_info.username, m_id), tid)
+    await message.answer("✅ Topikka yuborildi!" if res else f"❌ Xato! Asosiy guruh ID (`{GROUP_ID}`) yoki Topic ID (`{tid}`) xato.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_yangi_guruh_yuk)
@@ -356,10 +354,10 @@ async def yangi_guruh_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
     cap = get_premium_caption(txt, "YANGI GURUH ELONI")
     res = await send_all(NEW_GROUP_ID, message, cap, get_group_kb(None))
-    await message.answer("✅ Oddiy xabar guruhga ketdi!" if res else "❌ Yuborishda xato yuz berdi.")
+    await message.answer("✅ Oddiy xabar yangi guruhga ketdi!" if res else "❌ Yuborishda xato yuz berdi.")
     await state.clear()
 
-# --- AVTO JAVOB ---
+# --- AVTO JAVOB TIZIMI ---
 @dp.message()
 async def auto_reply_handler(message: types.Message):
     if message.chat.type == "private" and message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
