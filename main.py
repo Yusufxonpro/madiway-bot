@@ -12,11 +12,11 @@ from aiogram.client.default import DefaultBotProperties
 
 logging.basicConfig(level=logging.INFO)
 
-# --- SOZLAMALAR (YANGI GURUH ID INTEGRATSIYA QILINDI) ---
+# --- SOZLAMALAR ---
 BOT_TOKEN = "8724439262:AAFGNuQQ4IxdqitlcCEtkHLsvyFwSPg_b1c"
 CHANNEL_USER = "MADIWAYy" 
 GROUP_ID = "-1002130310815"       
-NEW_GROUP_ID = "-1004370807037"   # <- Sening yangi guruh ID raqaming 
+NEW_GROUP_ID = "-1004370807037"   
 CHANNEL_ID = "-1002120000000"
 
 ADMIN_ID = 6977836294         
@@ -35,7 +35,7 @@ AUTO_PAYMENT_MESSAGE = (
     "👋 <b>Salom! MadiWay tizimiga to'lov qilish uchun ma'lumotlar:</b>\n\n"
     "💳 <b>UzCard / VISA Card:</b> <code>4916-9903-5000-8311</code>\n"
     "👤 <b>Ega:</b> MadiWay Admin\n\n"
-    "💵 <b>To'lov miqdorlari:</b>\n
+    "💵 <b>To'lov miqdorlari:</b>\n"
     "🔹 1 kunlik — 15 000 so'm\n"
     "🔹 2 kunlik — 20 000 so'm\n"
     "🔹 3 kunlik — 30 000 so'm\n"
@@ -88,16 +88,6 @@ def check_premium(user_id):
         except: pass
     return False
 
-def load_start_settings():
-    if os.path.exists(START_SETTINGS_FILE):
-        try:
-            with open(START_SETTINGS_FILE, "r", encoding="utf-8") as f: return json.load(f)
-        except: pass
-    return {"type": "text", "file_id": None, "text": "🏔 MadiWay tizimiga xush kelibsiz!"}
-
-def save_start_settings(data):
-    with open(START_SETTINGS_FILE, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
-
 def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡𝗜"):
     now = datetime.now(UZB_TZ)
     sana_soat = now.strftime("📅 %Y-%m-%d  🕒 %I:%M %p") 
@@ -132,13 +122,14 @@ async def send_all(chat_id, message, caption, kb, t_id=None):
         logging.error(f"Xabar yuborishda xato: {e}")
         return None
 
-# --- DEEPLINK INTEGRATSIYASI ---
+# --- TOZALANGAN VA YANGILANGAN START ---
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     register_user(user_id, message.from_user.username, message.from_user.full_name)
     
+    # Guruhdan havola orqali yukni ko'rishga kelganda
     if command.args:
         yuk_id = command.args
         if check_premium(user_id) or user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
@@ -157,7 +148,7 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             await message.answer("❌ <b>Ushbu yukni to'liq ko'rish uchun sizda VIP obuna faol emas!</b>\n\n👇 Davom etish uchun tariflardan birini tanlang va faollashtiring:", reply_markup=kb)
             return
 
-    start_data = load_start_settings()
+    # Oddiy foydalanuvchi birinchi marta start berganda chiqadigan mutlaqo toza xabar
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="⚙️ Start sozlash", callback_data="btn_add_start_msg"),
@@ -165,17 +156,21 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             [types.InlineKeyboardButton(text="⭐️ Kanalga yuk", callback_data="btn_kanal_tashlash"),
              types.InlineKeyboardButton(text="✨ Bitta Topicga", callback_data="btn_bitta_topic")],
             [types.InlineKeyboardButton(text="💥 Hammasiga yuborish", callback_data="btn_hamma_topic")],
-            [types.InlineKeyboardButton(text="🆕 1Yangi Guruhga xabar", callback_data="btn_yangi_guruh"),
+            [types.InlineKeyboardButton(text="🆕 Yangi Guruhga xabar", callback_data="btn_yangi_guruh"),
              types.InlineKeyboardButton(text="🚛 Yangi Guruh 100 ta yuk", callback_data="btn_yangi_guruh_100")],
             [types.InlineKeyboardButton(text="🔑 VIP Obuna Aktivlashtirish", callback_data="btn_give_vip")]
         ])
         await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
     else:
+        # Hech qanday boshqa kanallarsiz, faqatgina sening MadiWay menyuing chiqadi!
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="📊 Tariflarni va guruhlarni tanlash", callback_data="btn_show_tariffs")],
-            [types.InlineKeyboardButton(text="📢 Kanalga o'tish", url=f"https://t.me/{CHANNEL_USER}")]
+            [types.InlineKeyboardButton(text="📢 MadiWay Kanaliga o'tish", url=f"https://t.me/{CHANNEL_USER}")]
         ])
-        await message.answer(start_data.get("text") or "Tizim faol!", reply_markup=kb)
+        
+        # JSON fayldagi eski xabarlarni chetlab o'tib, toza boshlang'ich xabar chiqarish
+        clean_text = "🏔 <b>MadiWay logistika tizimiga xush kelibsiz!</b>\n\nYuklar haqida to'liq ma'lumot olish va guruhlarga qo'shilish uchun quyidagi tugmalardan foydalaning:"
+        await message.answer(clean_text, reply_markup=kb)
 
 # --- STATISTIKA VA VIP ---
 @dp.callback_query(F.data == "btn_stats")
@@ -229,7 +224,7 @@ async def finish_vip_giving(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Foydalanuvchi bot bazasidan topilmadi!")
     await state.clear()
 
-# --- TARIFLAR ---
+# --- TARIFLAR MENU ---
 @dp.callback_query(F.data == "btn_show_tariffs")
 async def show_tariffs_menu(callback: types.CallbackQuery):
     await callback.answer()
@@ -262,7 +257,7 @@ async def track_and_redirect(callback: types.CallbackQuery):
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🚀 Adminga o'tish (Chek yuborish)", url="https://t.me/madiways")]])
     await callback.message.answer("To'lov chekini yuborish uchun adminga o'tishingiz mumkin:", reply_markup=kb)
 
-# --- ADMIN PANEL CALL BACKS ---
+# --- ADMIN PANEL FUNKSIYALARI ---
 @dp.callback_query(F.data.startswith('btn_'))
 async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -294,7 +289,8 @@ async def topic_sel(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(MadiWayStates.kutish_global_start)
 async def save_start(message: types.Message, state: FSMContext):
-    save_start_settings({"text": message.html_text or message.caption or ""})
+    with open(START_SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump({"text": message.html_text or message.caption or ""}, f, ensure_ascii=False, indent=4)
     await message.answer("✅ Start xabari saqlandi!")
     await state.clear()
 
@@ -310,7 +306,6 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     await message.answer("✅ Kanalga yuborildi!" if res else "❌ Kanal ID xato.")
     await state.clear()
 
-# ⚡️ YANGI GURUHGA 100 TA YUK (SOZLANMALAR TO'LIQ ISHLAYDI)
 @dp.message(MadiWayStates.kutish_yangi_guruh_100_yuk)
 async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
@@ -364,13 +359,14 @@ async def yangi_guruh_yuk(message: types.Message, state: FSMContext):
     await message.answer("✅ Oddiy xabar guruhga ketdi!" if res else "❌ Yuborishda xato yuz berdi.")
     await state.clear()
 
-# --- AVTO JAVOB TIZIMI ---
+# --- AVTO JAVOB ---
 @dp.message()
 async def auto_reply_handler(message: types.Message):
     if message.chat.type == "private" and message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         await message.answer(AUTO_PAYMENT_MESSAGE)
 
 async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
