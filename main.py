@@ -41,6 +41,8 @@ AUTO_TASKS_FILE = "auto_tasks_database.json"
 START_MSG_FILE = "start_message_data.json"  
 
 UZB_TZ = timezone(timedelta(hours=5))
+
+# Rasmli albomlarni keshda ushlab turish uchun
 MEDIA_GROUPS_CACHE: Dict[str, List[types.Message]] = {}
 
 # Taqiqlangan so'zlar filtri
@@ -151,9 +153,11 @@ class MadiWayStates(StatesGroup):
     kutish_kanal_yuk = State()
     kutish_bitta_topic_yuk = State()
     kutish_hamma_topic_yuk = State()
-    kutish_yangi_guruh_yuk = State()
-    kutish_yangi_guruh_100_yuk = State()
-    kutish_yangi_guruh_media_yuk = State()
+    
+    # Guruhlar uchun media (rasm) kutish holatlarini mutloq ajratdik:
+    kutish_madiway_guruh_media = State()  # MadiWay uchun alohida
+    kutish_yangi_guruh_media = State()    # International uchun alohida
+    
     giving_premium_username = State()
     giving_premium_days = State()
     user_kutish_guruh_tanlash = State()
@@ -184,27 +188,46 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
         yuk_id = command.args
         ydb = load_yuk_db()
         data = ydb.get(yuk_id)
+        
+        if not data:
+            await message.answer("⚠️ Yuk ma'lumotlari topilmadi yoki o'chirib yuborilgan.")
+            return
+
+        # Agar bazada saqlangan ma'lumot albomli (rasmli) yuk bo'lsa
+        if isinstance(data, dict) and data.get("type") == "media_group":
+            media_ids = data.get("media_ids", [])
+            caption_text = data.get("text", "")
+            
+            if not media_ids:
+                await message.answer("⚠️ Ushbu yukning rasmlari topilmadi.")
+                return
+                
+            # Albomni qayta yig'ish va foydalanuvchiga yuborish
+            mb = MediaGroupBuilder(caption=get_premium_caption(caption_text, "𝗧𝗢'𝗟𝗜𝗤 𝗔𝗟𝗕𝗢𝗠 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧𝗜", is_new_group=data.get("is_new_group", False)))
+            for f_id in media_ids:
+                mb.add_photo(media=f_id)
+            try:
+                await message.answer_media_group(media=mb.build())
+            except Exception as e:
+                await message.answer(f"❌ Albomni yuklashda xatolik: {e}")
+            return
+
+        # Oddiy matnli yuklarni ko'rish qismi
         if yuk_id.startswith("c"):
-            if data:
-                txt = data if isinstance(data, str) else data.get("text", "")
-                await message.answer(get_premium_caption(txt, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧"))
-            else: 
-                await message.answer("⚠️ Yuk ma'lumotlari topilmadi.")
+            txt = data if isinstance(data, str) else data.get("text", "")
+            await message.answer(get_premium_caption(txt, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧"))
             return
 
         if check_premium(user_id) or user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
-            if data:
-                if isinstance(data, str): 
-                    await message.answer(get_premium_caption(data, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧"))
-                else:
-                    text = data.get("text", "")
-                    phone = data.get("phone", "Ko'rsatilmagan")
-                    owner = data.get("owner", "Noma'lum")
-                    is_ng = data.get("is_new_group", False)
-                    full_info = f"{text}\n\n☎️ <b>Aloqa uchun telefon:</b> <code>{phone}</code>\n👤 <b>Yuk egasi:</b> {owner}"
-                    await message.answer(get_premium_caption(full_info, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧 VA RAQAM", is_new_group=is_ng))
-            else: 
-                await message.answer("⚠️ Yuk topilmadi.")
+            if isinstance(data, str): 
+                await message.answer(get_premium_caption(data, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧"))
+            else:
+                text = data.get("text", "")
+                phone = data.get("phone", "Ko'rsatilmagan")
+                owner = data.get("owner", "Noma'lum")
+                is_ng = data.get("is_new_group", False)
+                full_info = f"{text}\n\n☎️ <b>Aloqa uchun telefon:</b> <code>{phone}</code>\n👤 <b>Yuk egasi:</b> {owner}"
+                await message.answer(get_premium_caption(full_info, "𝗧𝗢'𝗟𝗜𝗤 𝗠𝗔'𝗟𝗨𝗠𝗢𝗧 VA RAQAM", is_new_group=is_ng))
             return
         else:
             await message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
@@ -212,13 +235,14 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
 
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="⚙️ Start xabari (Media)", callback_data="btn_add_start_msg"), types.InlineKeyboardButton(text="🧹 Reklama Tozalash", callback_data="btn_clean_status")],
-            [types.InlineKeyboardButton(text="⭐️ Kanalga yuk (BEPUL)", callback_data="btn_kanal_tashlash"), types.InlineKeyboardButton(text="✨ Bitta Topicga", callback_data="btn_bitta_topic")],
-            [types.InlineKeyboardButton(text="💥 Hammasiga yuborish", callback_data="btn_hamma_topic"), types.InlineKeyboardButton(text="📊 Statistika", callback_data="btn_stats")],
-            [types.InlineKeyboardButton(text="🆕 Yangi Guruh xabar", callback_data="btn_yangi_guruh"), types.InlineKeyboardButton(text="🚛 Yangi Guruh 100 ta yuk", callback_data="btn_yangi_guruh_100")],
-            [types.InlineKeyboardButton(text="📸 Yangi Guruh (10 rasm)", callback_data="btn_yangi_guruh_media"), types.InlineKeyboardButton(text="🔑 VIP Faollashtirish", callback_data="btn_give_vip")]
+            [types.InlineKeyboardButton(text="⚙️ Start xabari", callback_data="btn_add_start_msg"), types.InlineKeyboardButton(text="🧹 Guruh Tozalash", callback_data="btn_clean_status")],
+            [types.InlineKeyboardButton(text="⭐️ Kanalga yuk (Matn)", callback_data="btn_kanal_tashlash"), types.InlineKeyboardButton(text="✨ Bitta Topicga", callback_data="btn_bitta_topic")],
+            [types.InlineKeyboardButton(text="💥 Hammasiga (Topic)", callback_data="btn_hamma_topic"), types.InlineKeyboardButton(text="📊 Statistika", callback_data="btn_stats")],
+            [types.InlineKeyboardButton(text="🚛 MadiWay (Rasmli Albom)", callback_data="btn_madiway_media")],
+            [types.InlineKeyboardButton(text="🌍 International (Rasmli Albom)", callback_data="btn_yangi_guruh_media")],
+            [types.InlineKeyboardButton(text="🔑 VIP Faollashtirish", callback_data="btn_give_vip")]
         ])
-        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
+        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡Ｅ𝗟</b>", reply_markup=kb)
     else:
         start_data = load_start_msg()
         buttons = [[types.InlineKeyboardButton(text="💰 Guruhga qo'shilish / Tariflar", callback_data="btn_show_tariffs")]]
@@ -323,10 +347,10 @@ async def admin_finalize_quick_vip(callback: types.CallbackQuery, state: FSMCont
         else:
             try:
                 invite_link_obj = await bot.create_chat_invite_link(chat_id=GROUP_ID, member_limit=1, name="VIP Special Single Link")
-                invite_buttons.append([types.InlineKeyboardButton(text="Cg== MadiWay Asosiy Guruhga Kirish (1 marta)", url=invite_link_obj.invite_link)])
+                invite_buttons.append([types.InlineKeyboardButton(text="MadiWay Asosiy Guruhga Kirish (1 marta)", url=invite_link_obj.invite_link)])
                 invite_buttons.append([types.InlineKeyboardButton(text="✅ Guruhga kirdim (Tugmani o'chirish)", callback_data="delete_join_msg")])
             except: 
-                invite_buttons.append([types.InlineKeyboardButton(text="Cg== MadiWay Asosiy Guruh", url=f"https://t.me/{GROUP_USER}")])
+                invite_buttons.append([types.InlineKeyboardButton(text="MadiWay Asosiy Guruh", url=f"https://t.me/{GROUP_USER}")])
         
         invite_buttons.append([types.InlineKeyboardButton(text="📦 Yuk Tashlashni Boshlash", callback_data="btn_user_send_yuk")])
         try: await bot.send_message(chat_id=int(found_uid), text=welcome_text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=invite_buttons))
@@ -338,39 +362,27 @@ async def delete_join_message_handler(callback: types.CallbackQuery):
     try: await callback.message.delete()
     except: pass
 
-# --- GURUH XABARLARINI NAZORAT QILISH (REKLAMA/SOKINISH TOZALAGICH) ---
+# --- GURUH XABARLARINI NAZORAT QILISH (REKLAMA TOZALAGICH) ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_moderator_handler(message: types.Message):
-    # Kirdi-chiqdi tizimli xabarlarini avtomat o'chirish
     if message.new_chat_members or message.left_chat_member:
         try: await message.delete()
         except: pass
         return
 
     user_id = message.from_user.id
-    # Adminlar xabarlarini tekshirmaymiz, o'chirmaymiz
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         return
 
-    # Madina opaning guruhini aniq son formatida taqqoslab tekshiramiz
     if message.chat.id == int(MADINA_GROUP_ID):
         msg_text = message.text or message.caption or ""
-        
-        # 1. Boshqa kanal/guruhdan "Forward" qilib uzatilgan har qanday reklamani aniqlash
         is_forwarded = message.forward_date or message.forward_from or message.forward_from_chat
-
-        # 2. Taqiqlangan havolalar (link) yoki userneymlar borligini tekshirish
         has_link = "http" in msg_text.lower() or "t.me" in msg_text.lower() or "@" in msg_text
-        
-        # 3. Sokinish va taqiqlangan so'zlar filtri
         has_bad_word = any(bad in msg_text.lower() for bad in BAD_WORDS)
         
-        # Agar xabarda havola, taqiqlangan so'z yoki forward reklama bo'lsa - DARHOL O'CHIRAMIZ!
         if has_link or has_bad_word or is_forwarded:
-            try: 
-                await message.delete()
-            except Exception as e: 
-                logging.error(f"Xabarni o'chirishda xatolik yuz berdi: {e}")
+            try: await message.delete()
+            except Exception as e: logging.error(f"Xabarni o'chirishda xatolik: {e}")
 
 # --- FOYDALANUVCHI YUK YUBORISH TIZIMI ---
 @dp.callback_query(F.data == "btn_user_send_yuk")
@@ -463,20 +475,22 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("⚙️ Yangi start xabari uchun Rasm, Video yoki oddiy Matn yuboring:")
         await state.set_state(MadiWayStates.kutish_global_start)
     elif callback.data == "btn_kanal_tashlash":
-        await callback.message.answer("📥 Kanal yukini yuboring:")
+        await callback.message.answer("📥 Kanal yukini (faqat matn) yuboring:")
         await state.set_state(MadiWayStates.kutish_kanal_yuk)
     elif callback.data == "btn_hamma_topic":
         await callback.message.answer("💥 Barcha topiklarga yuboriladigan yukni kiriting:")
         await state.set_state(MadiWayStates.kutish_hamma_topic_yuk)
-    elif callback.data == "btn_yangi_guruh":
-        await callback.message.answer("📥 Yangi guruhga xabarni kiriting:")
-        await state.set_state(MadiWayStates.kutish_yangi_guruh_yuk)
-    elif callback.data == "btn_yangi_guruh_100":
-        await callback.message.answer("🚛 Yangi guruhga 100 ta yuk xabarini yuboring:")
-        await state.set_state(MadiWayStates.kutish_yangi_guruh_100_yuk)
+        
+    # ── MADIWAY UCHUN ALBOM (RASMLAR) QABUL QILISH ──
+    elif callback.data == "btn_madiway_media":
+        await callback.message.answer("📸 <b>MADIWAY</b> (Asosiy Guruh) uchun rasmlar to'plamini (Albom) yuboring.\n<i>Matnni birinchi rasm tagiga yozib yuboring:</i>")
+        await state.set_state(MadiWayStates.kutish_madiway_guruh_media)
+        
+    # ── INTERNATIONAL UCHUN ALBOM (RASMLAR) QABUL QILISH ──
     elif callback.data == "btn_yangi_guruh_media":
-        await callback.message.answer("📸 Yangi guruh uchun albomni yuboring:")
-        await state.set_state(MadiWayStates.kutish_yangi_guruh_media_yuk)
+        await callback.message.answer("📸 <b>INTERNATIONAL LOGISTIC</b> (Yangi Guruh) uchun rasmlar to'plamini (Albom) yuboring.\n<i>Matnni birinchi rasm tagiga yozib yuboring:</i>")
+        await state.set_state(MadiWayStates.kutish_yangi_guruh_media)
+        
     elif callback.data == "btn_bitta_topic":
         btns = [types.InlineKeyboardButton(text=n, callback_data=f"select_topic_{id}") for n, id in TOPICS.items()]
         kb = types.InlineKeyboardMarkup(inline_keyboard=[btns[i:i+2] for i in range(0, len(btns), 2)])
@@ -528,7 +542,7 @@ async def admin_finalize_vip(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(f"✅ VIP berildi!")
     await state.clear()
 
-# --- ADMIN MATN/ALBOM AMALLARI ---
+# --- ADMIN MATN/START AMALLARI ---
 @dp.message(MadiWayStates.kutish_global_start)
 async def save_start(message: types.Message, state: FSMContext):
     start_data = {"text": message.html_text or message.caption or "", "type": "text", "file_id": None}
@@ -542,56 +556,99 @@ async def save_start(message: types.Message, state: FSMContext):
     await message.answer("✅ Start saqlandi.")
     await state.clear()
 
-@dp.message(MadiWayStates.kutish_yangi_guruh_100_yuk)
-async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
-    txt = message.html_text or message.caption or ""
-    m_id = f"g{message.message_id}"
-    ydb = load_yuk_db()
-    ydb[m_id] = {"text": txt, "phone": "Admin", "owner": "Admin", "is_new_group": True}
-    save_yuk_db(ydb)
-    bot_info = await bot.get_me()
-    cap = get_premium_caption(txt[:150] + "...", "YUKLAR", is_new_group=True)
-    await asyncio.sleep(0.4)
-    await send_all(NEW_GROUP_ID, message, cap, get_group_kb(bot_info.username, m_id))
-    await message.answer("✅ 100 ta yuk guruhga ketdi!")
-    await state.clear()
-
-@dp.message(MadiWayStates.kutish_yangi_guruh_media_yuk, F.media_group_id)
-async def handle_media_group(message: types.Message, state: FSMContext):
+# ── 1. MADIWAY (ASOSIY GURUH) ALBOM PROCESSING (TO'LIQ ALOHIDA TIZIM) ──
+@dp.message(MadiWayStates.kutish_madiway_guruh_media, F.media_group_id)
+async def handle_madiway_media_group(message: types.Message, state: FSMContext):
     mg_id = message.media_group_id
     if mg_id not in MEDIA_GROUPS_CACHE:
         MEDIA_GROUPS_CACHE[mg_id] = []
-        asyncio.create_task(process_media_group_delayed(mg_id, state, message.message_id, message.from_user.id))
+        asyncio.create_task(process_madiway_media_delayed(mg_id, state, message.message_id))
     MEDIA_GROUPS_CACHE[mg_id].append(message)
 
-async def process_media_group_delayed(mg_id: str, state: FSMContext, original_msg_id: int, user_id: int):
+async def process_madiway_media_delayed(mg_id: str, state: FSMContext, original_msg_id: int):
     await asyncio.sleep(1.5)
     messages = MEDIA_GROUPS_CACHE.get(mg_id, [])
     if not messages: return
+    
     caption_text = next((msg.caption for msg in messages if msg.caption), "")
-    m_id = f"g{original_msg_id}"
+    media_ids = [msg.photo[-1].file_id for msg in messages if msg.photo]
+    
+    m_id = f"m_media_{original_msg_id}"
     ydb = load_yuk_db()
-    ydb[m_id] = {"text": caption_text, "phone": "MadiWay", "owner": "Admin", "is_new_group": True}
+    # Bazaga to'liq albom tipida barcha rasmlar ID'sini qo'shib saqlaymiz!
+    ydb[m_id] = {
+        "type": "media_group",
+        "text": caption_text,
+        "media_ids": media_ids,
+        "is_new_group": False
+    }
     save_yuk_db(ydb)
+    
     bot_info = await bot.get_me()
-    cap = get_premium_caption(caption_text[:150] + "...", "𝗫𝗔𝗩𝗙𝗦𝗜𝗭 𝗠𝗘𝗗𝗜𝗔", is_new_group=True)
-    media_group = MediaGroupBuilder()
-    is_first = True
-    for msg in messages:
-        current_cap = cap if is_first else None
-        if msg.photo: 
-            media_group.add_photo(media=msg.photo[-1].file_id, caption=current_cap)
-            is_first = False
-        elif msg.video: 
-            media_group.add_video(media=msg.video.file_id, caption=current_cap)
-            is_first = False
+    cap = get_premium_caption(caption_text[:150] + "...", "📦 MADIWAY ALBOM", is_new_group=False)
+    
+    # Asosiy guruhga albom qilib chiqarish
+    mb = MediaGroupBuilder(caption=cap)
+    for f_id in media_ids:
+        mb.add_photo(media=f_id)
+        
     try:
-        await bot.send_media_group(chat_id=NEW_GROUP_ID, media=media_group.build())
-        await bot.send_message(chat_id=NEW_GROUP_ID, text="▲ <b>Ma'lumotlar:</b>", reply_markup=get_group_kb(bot_info.username, m_id))
-    except: pass
+        await bot.send_media_group(chat_id=GROUP_ID, media=mb.build())
+        await bot.send_message(chat_id=GROUP_ID, text="▲ <b>To'liq ma'lumot va barcha rasmlarni ko'rish:</b>", reply_markup=get_group_kb(bot_info.username, m_id))
+    except Exception as e:
+        logging.error(f"MadiWay albom jo'natishda xato: {e}")
+        
     if mg_id in MEDIA_GROUPS_CACHE: del MEDIA_GROUPS_CACHE[mg_id]
     await state.clear()
 
+
+# ── 2. INTERNATIONAL LOGISTIC (YANGI GURUH) ALBOM PROCESSING (MUTLOQ AJRATILGAN) ──
+@dp.message(MadiWayStates.kutish_yangi_guruh_media, F.media_group_id)
+async def handle_yangi_media_group(message: types.Message, state: FSMContext):
+    mg_id = message.media_group_id
+    if mg_id not in MEDIA_GROUPS_CACHE:
+        MEDIA_GROUPS_CACHE[mg_id] = []
+        asyncio.create_task(process_yangi_media_delayed(mg_id, state, message.message_id))
+    MEDIA_GROUPS_CACHE[mg_id].append(message)
+
+async def process_yangi_media_delayed(mg_id: str, state: FSMContext, original_msg_id: int):
+    await asyncio.sleep(1.5)
+    messages = MEDIA_GROUPS_CACHE.get(mg_id, [])
+    if not messages: return
+    
+    caption_text = next((msg.caption for msg in messages if msg.caption), "")
+    media_ids = [msg.photo[-1].file_id for msg in messages if msg.photo]
+    
+    m_id = f"y_media_{original_msg_id}"
+    ydb = load_yuk_db()
+    # Yangi guruh uchun bazaga albom ma'lumotlarini rasmlari bilan saqlaymiz
+    ydb[m_id] = {
+        "type": "media_group",
+        "text": caption_text,
+        "media_ids": media_ids,
+        "is_new_group": True
+    }
+    save_yuk_db(ydb)
+    
+    bot_info = await bot.get_me()
+    cap = get_premium_caption(caption_text[:150] + "...", "🌍 INTERNATIONAL ALBOM", is_new_group=True)
+    
+    # Yangi guruhga albom qilib chiqarish
+    mb = MediaGroupBuilder(caption=cap)
+    for f_id in media_ids:
+        mb.add_photo(media=f_id)
+        
+    try:
+        await bot.send_media_group(chat_id=NEW_GROUP_ID, media=mb.build())
+        await bot.send_message(chat_id=NEW_GROUP_ID, text="▲ <b>To'liq ma'lumot va barcha rasmlarni ko'rish:</b>", reply_markup=get_group_kb(bot_info.username, m_id))
+    except Exception as e:
+        logging.error(f"Yangi guruhga albom jo'natishda xato: {e}")
+        
+    if mg_id in MEDIA_GROUPS_CACHE: del MEDIA_GROUPS_CACHE[mg_id]
+    await state.clear()
+
+
+# --- KANAL VA TOPIC ISHLARI (MATNLI AMALLAR) ---
 @dp.message(MadiWayStates.kutish_kanal_yuk)
 async def chan_yuk(message: types.Message, state: FSMContext):
     txt = message.html_text or message.caption or ""
@@ -601,7 +658,7 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     save_yuk_db(ydb)
     bot_info = await bot.get_me()
     await send_all(CHANNEL_ID, message, get_premium_caption(txt), get_group_kb(bot_info.username, m_id))
-    await message.answer("✅ Kanalga ketdi.")
+    await message.answer("✅ Kanalga faqat matn ko'rinishida muvaffaqiyatli ketdi.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_hamma_topic_yuk)
@@ -615,13 +672,13 @@ async def all_yuk(message: types.Message, state: FSMContext):
     for n, tid in TOPICS.items():
         await send_all(GROUP_ID, message, get_premium_caption(txt[:150] + "..."), get_group_kb(bot_info.username, m_id), tid)
         await asyncio.sleep(0.4)
-    await message.answer("✅ Hammasiga ketdi.")
+    await message.answer("✅ Barcha topiklarga yuborildi.")
     await state.clear()
 
 @dp.callback_query(F.data.startswith('select_topic_'))
 async def topic_sel(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(target_topic_id=callback.data.split('_')[2])
-    await callback.message.answer("📥 Yukni kiriting:")
+    await callback.message.answer("📥 Yuk matnini kiriting:")
     await state.set_state(MadiWayStates.kutish_bitta_topic_yuk)
 
 @dp.message(MadiWayStates.kutish_bitta_topic_yuk)
@@ -634,14 +691,7 @@ async def bitta_topic_yuk(message: types.Message, state: FSMContext):
     save_yuk_db(ydb)
     bot_info = await bot.get_me()
     await send_all(GROUP_ID, message, get_premium_caption(txt[:150] + "..."), get_group_kb(bot_info.username, m_id), tid)
-    await message.answer("✅ Ketdi.")
-    await state.clear()
-
-@dp.message(MadiWayStates.kutish_yangi_guruh_yuk)
-async def yangi_guruh_yuk(message: types.Message, state: FSMContext):
-    txt = message.html_text or message.caption or ""
-    await send_all(NEW_GROUP_ID, message, get_premium_caption(txt, "INFO", is_new_group=True), get_group_kb(None))
-    await message.answer("✅ Yuborildi.")
+    await message.answer("✅ Tanlangan bo'limga ketdi.")
     await state.clear()
 
 async def send_all(chat_id, message, caption, kb, t_id=None):
@@ -660,7 +710,7 @@ async def auto_reply_handler(message: types.Message):
     if message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         await message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
 
-# --- 🔄 MULTI-GURUH CRON TIZIMI (XAVFSIZ TOZALASH) ---
+# --- 🔄 CRON AUTO-CLEAN & RE-POST TIZIMI ---
 async def auto_cron_job():
     while True:
         try:
@@ -670,11 +720,9 @@ async def auto_cron_job():
             db_changed = False
             tasks_changed = False
 
-            # 1. VIP muddati tugaganlarni aniqlash va guruhlardan tozalash
             for uid, info in list(db["users"].items()):
                 if info.get("premium_until"):
-                    try:
-                        until_dt = datetime.fromisoformat(info["premium_until"]).astimezone(UZB_TZ)
+                    try: until_dt = datetime.fromisoformat(info["premium_until"]).astimezone(UZB_TZ)
                     except: continue
                     
                     if now > until_dt:
@@ -687,52 +735,38 @@ async def auto_cron_job():
                         db["users"][uid]["premium_until"] = None
                         db["users"][uid]["interval_type"] = "oddiy"
                         db_changed = True
-                        
                         if uid in tasks:
                             del tasks[uid]
                             tasks_changed = True
-                        
                         try:
-                            await bot.send_message(
-                                chat_id=int(uid), 
-                                text="⚠️ <b>VIP obunangiz muddati tugadi!</b>\nTizim sizni guruhlardan va avto-postdan avtomatik ravishda o'chirdi. Obunani yangilash uchun adminga murojaat qiling."
-                            )
+                            await bot.send_message(chat_id=int(uid), text="⚠️ <b>VIP obunangiz muddati tugadi!</b>")
                         except: pass
 
             if db_changed: save_db(db)
             if tasks_changed: save_tasks(tasks)
 
-            # 2. Avto Re-Post tizimi
+            # Re-post jarayoni (faqat matnli va standart foydalanuvchi yuklari uchun)
             ydb = load_yuk_db()
             bot_info = await bot.get_me()
-            
             for uid, task in list(tasks.items()):
                 if not check_premium(int(uid)):
-                    if uid in tasks:
-                        del tasks[uid]
-                        save_tasks(tasks)
+                    if uid in tasks: del tasks[uid]; save_tasks(tasks)
                     continue
-                
-                try:
-                    last_sent = datetime.fromisoformat(task["last_sent"]).astimezone(UZB_TZ)
+                try: last_sent = datetime.fromisoformat(task["last_sent"]).astimezone(UZB_TZ)
                 except: last_sent = now
                 
                 diff_minutes = (now - last_sent).total_seconds() / 60
-                
                 if diff_minutes >= task["interval"]:
                     yuk_data = ydb.get(task["yuk_id"])
-                    if yuk_data:
+                    if yuk_data and isinstance(yuk_data, dict) and yuk_data.get("type") != "media_group":
                         is_ng = yuk_data.get("is_new_group", False)
                         cap = get_premium_caption(yuk_data["text"][:150] + "...", "🔂 AVTO RE-POST", is_new_group=is_ng)
-                        kb = get_group_kb(bot_info.username, task["yuk_id"])
                         chat = NEW_GROUP_ID if is_ng else GROUP_ID
-                        tid = task.get("target_topic", None)
                         try:
-                            await bot.send_message(chat_id=chat, text=cap, reply_markup=kb, message_thread_id=tid)
+                            await bot.send_message(chat_id=chat, text=cap, reply_markup=get_group_kb(bot_info.username, task["yuk_id"]), message_thread_id=task.get("target_topic"))
                             tasks[uid]["last_sent"] = now.isoformat()
                             save_tasks(tasks)
                         except: pass
-                            
         except Exception as ex: logging.error(f"Cron error: {ex}")
         await asyncio.sleep(30)
 
