@@ -341,25 +341,36 @@ async def delete_join_message_handler(callback: types.CallbackQuery):
 # --- GURUH XABARLARINI NAZORAT QILISH (REKLAMA/SOKINISH TOZALAGICH) ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_moderator_handler(message: types.Message):
+    # Kirdi-chiqdi tizimli xabarlarini avtomat o'chirish
     if message.new_chat_members or message.left_chat_member:
         try: await message.delete()
         except: pass
         return
 
-    chat_id_str = str(message.chat.id)
     user_id = message.from_user.id
-
+    # Adminlar xabarlarini tekshirmaymiz, o'chirmaymiz
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         return
 
-    if chat_id_str == MADINA_GROUP_ID:
+    # Madina opaning guruhini aniq son formatida taqqoslab tekshiramiz
+    if message.chat.id == int(MADINA_GROUP_ID):
         msg_text = message.text or message.caption or ""
+        
+        # 1. Boshqa kanal/guruhdan "Forward" qilib uzatilgan har qanday reklamani aniqlash
+        is_forwarded = message.forward_date or message.forward_from or message.forward_from_chat
+
+        # 2. Taqiqlangan havolalar (link) yoki userneymlar borligini tekshirish
         has_link = "http" in msg_text.lower() or "t.me" in msg_text.lower() or "@" in msg_text
+        
+        # 3. Sokinish va taqiqlangan so'zlar filtri
         has_bad_word = any(bad in msg_text.lower() for bad in BAD_WORDS)
         
-        if has_link or has_bad_word:
-            try: await message.delete()
-            except: pass
+        # Agar xabarda havola, taqiqlangan so'z yoki forward reklama bo'lsa - DARHOL O'CHIRAMIZ!
+        if has_link or has_bad_word or is_forwarded:
+            try: 
+                await message.delete()
+            except Exception as e: 
+                logging.error(f"Xabarni o'chirishda xatolik yuz berdi: {e}")
 
 # --- FOYDALANUVCHI YUK YUBORISH TIZIMI ---
 @dp.callback_query(F.data == "btn_user_send_yuk")
@@ -445,7 +456,7 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(f"🧹 <b>Madina Kilo Kiyimlar Guruh Nazorati:</b>\n\n"
                                       f"ID: <code>{MADINA_GROUP_ID}</code>\n"
                                       f"⚡️ Kirdi-Chiqdi xabarlari: <b>Avtomat o'chiriladi</b>\n"
-                                      f"🚫 Reklama va havolalar: <b>Taqiqlangan (O'chiriladi)</b>\n"
+                                      f"🚫 Reklama va havolalar hamda Forwardlar: <b>Taqiqlangan (O'chiriladi)</b>\n"
                                       f"🤬 So'kinish va haqoratlar: <b>Tozalanadi</b>\n"
                                       f"👑 Adminlar: <b>Cheklovsiz</b>")
     elif callback.data == "btn_add_start_msg":
@@ -659,7 +670,7 @@ async def auto_cron_job():
             db_changed = False
             tasks_changed = False
 
-            # 1. VIP muddati tugaganlarni tozalash va haydash
+            # 1. VIP muddati tugaganlarni aniqlash va guruhlardan tozalash
             for uid, info in list(db["users"].items()):
                 if info.get("premium_until"):
                     try:
