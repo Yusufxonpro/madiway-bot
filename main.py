@@ -35,10 +35,12 @@ dp = Dispatcher(storage=MemoryStorage())
 USERS_DB_FILE = "users_database.json"
 YUK_DB_FILE = "yuklar_database.json"
 AUTO_TASKS_FILE = "auto_tasks_database.json"
+START_MSG_FILE = "start_message.txt"
 
 UZB_TZ = timezone(timedelta(hours=5))
 MEDIA_GROUPS_CACHE: Dict[str, List[types.Message]] = {}
 
+# Siz bergan yangi to'lov va tarif matni
 AUTO_PAYMENT_MESSAGE = (
     "👋 <b>MadiWay tizimida YUK TASHALASH va VIP guruh tariflari:</b>\n\n"
     "💳 <b>UzCard / VISA Card:</b> <code>4916-9903-5000-8311</code>\n"
@@ -48,8 +50,8 @@ AUTO_PAYMENT_MESSAGE = (
     "🔹 2 kunlik — 20 000 so'm\n"
     "🔹 3 kunlik — 30 000 so'm\n"
     "🔹 1 oylik — 50 000 so'm\n\n"
-    "🚀 <b>TEZKOR TARIF (Har 12 minutda avto-qayta tashlash):</b>\n"
-    "⚡️ 1 kunlik (Har 12 daqiqada guruhlarga yuborish) — 30 000 so'm\n\n"
+    "⚡️ <b>TEZKOR TARIF (Har 12 minutda avto-qayta tashlash):</b>\n"
+    "🚀 1 kunlik (Har 12 daqiqada guruhga yuborish) — 30 000 so'm\n\n"
     "⚠️ To'lovni amalga oshirib, chekni shu yerga yuboring va adminga aloqaga chiqing!\n"
     "📞 <b>Aloqa:</b> +998 88 325 80 07"
 )
@@ -59,14 +61,6 @@ TOPICS = {
     "🇰🇿 Kazakistan": 8, "🇮🇷 Eron": 10, "🇹🇯 Tojikston": 12, "🇧🇾 Belarusiya": 16,
     "🇬🇪 Gruziya": 18, "📣 Elon berish": 1
 }
-
-LINKS_INFO = (
-    "🔗 <b>MadiWay guruhlariga ulanish linklari:</b>\n\n"
-    "1️⃣ <b>MadiWay Kanali (BEPUL):</b>\n<code>t.me/MADIWAYy</code>\n\n"
-    "2️⃣ <b>MadiWay Asosiy Guruh (PULLIK):</b>\n<code>t.me/MADIWAYy_Gr</code>\n\n"
-    "3️⃣ <b>MadiWay Yangi Guruh (PULLIK):</b>\n<code>t.me/International_logistik</code>\n\n"
-    "⚠️ <i>Guruhga ruxsat olish uchun kerakli guruh havolasini botga yuboring!</i>"
-)
 
 # --- BAZA BILAN ISHLASH ---
 def load_db():
@@ -99,6 +93,12 @@ def load_tasks():
 def save_tasks(data):
     with open(AUTO_TASKS_FILE, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
 
+def load_start_msg():
+    if os.path.exists(START_MSG_FILE):
+        with open(START_MSG_FILE, "r", encoding="utf-8") as f:
+            return f.read()
+    return "🏔 <b>MadiWay logistika tizimiga xush kelibsiz!</b>\n\nYuklar haqida ma'lumot olish hamda guruhlarda yuk e'lon qilish uchun quyidagi tugmalardan foydalaning:"
+
 def check_premium(user_id):
     db = load_db()
     uid = str(user_id)
@@ -128,6 +128,12 @@ def get_tariff_keyboard():
         [types.InlineKeyboardButton(text="👑 1 Oy (50 000)", callback_data="track_30_kun")]
     ])
 
+def get_guruh_tanlash_kb():
+    return types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🚛 MadiWay Asosiy Guruh", callback_data="buy_guruh_main")],
+        [types.InlineKeyboardButton(text="🌍 International Logistik (Yangi)", callback_data="buy_guruh_new")]
+    ])
+
 class MadiWayStates(StatesGroup):
     kutish_global_start = State()
     kutish_kanal_yuk = State()
@@ -138,11 +144,11 @@ class MadiWayStates(StatesGroup):
     kutish_yangi_guruh_media_yuk = State()
     giving_premium_username = State()
     giving_premium_days = State()
-    kutish_guruh_linki = State()
     user_kutish_guruh_tanlash = State()
     user_kutish_topic_tanlash = State()
     user_kutish_yuk = State()       
     user_kutish_tel = State()       
+    admin_quick_vip_days = State() # Admin tezkor tasdiqlash holati
 
 # --- START BUYRUG'I VA DEEPLINK ---
 @dp.message(Command("start"))
@@ -150,7 +156,6 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
     await state.clear()
     user_id = message.from_user.id
     
-    # Ro'yxatdan o'tkazish
     db = load_db(); uid = str(user_id)
     if uid not in db["users"]:
         db["users"][uid] = {"username": message.from_user.username or "yo'q", "full_name": message.from_user.full_name, "premium_until": None, "interval_type": "oddiy"}
@@ -161,7 +166,6 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
         ydb = load_yuk_db()
         data = ydb.get(yuk_id)
         
-        # KANALIDAN KELGAN YUKLAR -> MUTLOQ BEPUL KO'RADI
         if yuk_id.startswith("c"):
             if data:
                 txt = data if isinstance(data, str) else data.get("text", "")
@@ -170,7 +174,6 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
                 await message.answer("⚠️ Yuk ma'lumotlari topilmadi.")
             return
 
-        # GURUXLARDAN KELGAN YUKLAR -> PULLIK TEKSHIRUV
         if check_premium(user_id) or user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
             if data:
                 if isinstance(data, str):
@@ -185,16 +188,9 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
                 await message.answer("⚠️ Yuk topilmadi.")
             return
         else:
-            guruh_nomi = "MadiWay Guruhlari"
-            if yuk_id.startswith("g"): guruh_nomi = "MadiWay Yangi Guruh"
-            elif yuk_id.startswith("b") or yuk_id.startswith("h"): guruh_nomi = "MadiWay Asosiy Guruh"
-            
-            await state.set_state(MadiWayStates.kutish_guruh_linki)
-            await state.update_data(tanlangan_guruh=guruh_nomi)
-            await message.answer(f"❌ <b>Ushbu guruhdagi ({guruh_nomi}) yukni to'liq ko'rish va raqamni olish uchun VIP obuna faol emas!</b>", reply_markup=get_tariff_keyboard())
+            await message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
             return
 
-    # Admin Panel
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="⚙️ Start sozlash", callback_data="btn_add_start_msg"), types.InlineKeyboardButton(text="📊 Statistika", callback_data="btn_stats")],
@@ -205,43 +201,115 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
         ])
         await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟</b>", reply_markup=kb)
     else:
+        start_text = load_start_msg()
         buttons = [[types.InlineKeyboardButton(text="💰 Guruhga qo'shilish / Tariflar", callback_data="btn_show_tariffs")]]
         if check_premium(user_id):
             buttons.append([types.InlineKeyboardButton(text="📦 Yuk Tashlash (Avto-Post)", callback_data="btn_user_send_yuk")])
         kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-        await message.answer("🏔 <b>MadiWay logistika tizimiga xush kelibsiz!</b>\n\nYuklar haqida ma'lumot olish hamda guruhlarda yuk e'lon qilish uchun quyidagi tugmalardan foydalaning:", reply_markup=kb)
+        await message.answer(start_text, reply_markup=kb)
 
-# --- TARIFLAR VA HAVOLA TEKSHIRUV ---
+# --- TARIFLAR (LINKSIZ TO'G'RIDAN TO'G'RI TARIF) ---
 @dp.callback_query(F.data == "btn_show_tariffs")
-async def show_tariffs_menu(callback: types.CallbackQuery, state: FSMContext):
+async def show_tariffs_menu(callback: types.CallbackQuery):
     await callback.answer()
-    await callback.message.answer(LINKS_INFO)
-    await state.set_state(MadiWayStates.kutish_guruh_linki)
+    # Havolalar chiqarilmaydi, faqat guruhni tanlash so'raladi
+    await callback.message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
 
-@dp.message(MadiWayStates.kutish_guruh_linki)
-async def process_group_link(message: types.Message, state: FSMContext):
-    link_text = message.text.lower() if message.text else ""
-    if "madiwayy_gr" in link_text: guruh_nomi = "MadiWay Asosiy Guruh"
-    elif "international_logistik" in link_text: guruh_nomi = "MadiWay Yangi Guruh"
-    else: guruh_nomi = "MadiWay Guruhlari"
-
+@dp.callback_query(F.data.startswith("buy_guruh_"))
+async def process_buy_guruh(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    g_type = callback.data.split("_")[2]
+    guruh_nomi = "MadiWay Asosiy Guruh" if g_type == "main" else "International Logistik"
+    
     await state.update_data(tanlangan_guruh=guruh_nomi)
-    await message.answer(f"✅ <b>Guruh aniqlandi:</b> {guruh_nomi}\n\n⏱ Obuna muddatini tanlang:", reply_markup=get_tariff_keyboard())
+    await callback.message.answer(f"📦 <b>Guruh:</b> {guruh_nomi}\n⏱ Kerakli tarif muddatini tanlang:", reply_markup=get_tariff_keyboard())
 
-@dp.callback_query(MadiWayStates.kutish_guruh_linki, F.data.startswith('track_'))
+@dp.callback_query(F.data.startswith('track_'))
 async def track_and_redirect(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     parts = callback.data.split("_")
     user_data = await state.get_data()
     guruh_nomi = user_data.get("tanlangan_guruh", "MadiWay Guruhlari")
     
-    alert = f"🔔 <b>YANGI TO'LOV SO'ROVI:</b>\n\n👤 Foydalanuvchi: {callback.from_user.full_name}\n🆔 ID: <code>{callback.from_user.id}</code>\n📦 Guruh: {guruh_nomi}\n🛒 Tarif: {parts[1]} {parts[2]}"
+    # Adminga boradigan xabarga tasdiqlash tugmasi qo'shildi
+    alert = (
+        f"🔔 <b>YANGI TO'LOV SO'ROVI:</b>\n\n"
+        f"👤 Foydalanuvchi: {callback.from_user.full_name}\n"
+        f"🆔 ID: <code>{callback.from_user.id}</code>\n"
+        f"📦 Guruh: {guruh_nomi}\n"
+        f"🛒 Tarif: {parts[1]} {parts[2]}"
+    )
+    
+    # Tezkor tasdiqlash tugmasi (foydalanuvchi ID si inline tugmaga biriktiriladi)
+    admin_kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="✅ To'lovni tasdiqlash", callback_data=f"adm_approve_{callback.from_user.id}")]
+    ])
+    
     for adm in [MADIWAY_ADMIN_ID, ADMIN_ID]:
-        try: await bot.send_message(chat_id=adm, text=alert)
+        try: await bot.send_message(chat_id=adm, text=alert, reply_markup=admin_kb)
         except: pass
         
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🚀 Adminga chek yuborish", url=f"https://t.me/{OWNER_USERNAME}")]])
-    await callback.message.answer(f"💳 <b>To'lov ma'lumotlari:</b>\nKarta: <code>4916-9903-5000-8311</code>\n\n👇 Pastdagi tugma orqali adminga chekni yuboring, admin sizni guruhlarga qo'shadi!", reply_markup=kb)
+    await callback.message.answer(f"💳 <b>To'lov ma'lumotlari:</b>\nKarta: <code>4916-9903-5000-8311</code>\n\n👇 Pastdagi tugma orqali adminga chekni yuboring, admin to'lovni tasdiqlashi bilan tizim sizni faollashtiradi!", reply_markup=kb)
+    await state.clear()
+
+# --- ADMIN: TO'LOVNI TEZKOR TASDIQLASH TUGMASI ---
+@dp.callback_query(F.data.startswith("adm_approve_"))
+async def admin_quick_approve(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    target_uid = callback.data.split("_")[2]
+    await state.update_data(quick_target_uid=target_uid)
+    
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🗓 1 Kun (Oddiy - 5 soat)", callback_data="qset_1_oddiy")],
+        [types.InlineKeyboardButton(text="🗓 1 Oy (Oddiy - 5 soat)", callback_data="qset_30_oddiy")],
+        [types.InlineKeyboardButton(text="🚀 1 Kun (⚡️ Tezkor - 12 minut)", callback_data="qset_1_tezkor")]
+    ])
+    await callback.message.answer(f"👤 ID: <code>{target_uid}</code> bo'lgan foydalanuvchiga VIP muddatini bering:", reply_markup=kb)
+    await state.set_state(MadiWayStates.admin_quick_vip_days)
+
+@dp.callback_query(MadiWayStates.admin_quick_vip_days, F.data.startswith("qset_"))
+async def admin_finalize_quick_vip(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    parts = callback.data.split("_")
+    days, itype = int(parts[1]), parts[2]
+    
+    sdata = await state.get_data()
+    found_uid = sdata.get("quick_target_uid")
+    
+    if found_uid:
+        db = load_db()
+        if found_uid not in db["users"]:
+            db["users"][found_uid] = {"username": "yo'q", "full_name": "Noma'lum", "premium_until": None, "interval_type": "oddiy"}
+            
+        end_date = datetime.now(UZB_TZ) + timedelta(days=days)
+        db["users"][found_uid]["premium_until"] = end_date.isoformat()
+        db["users"][found_uid]["interval_type"] = itype
+        db["premium_count"] = db.get("premium_count", 0) + 1
+        save_db(db)
+        
+        # Banlardan ochish
+        for gid in [NEW_GROUP_ID, GROUP_ID]:
+            try: await bot.unban_chat_member(chat_id=gid, user_id=int(found_uid), only_if_banned=True)
+            except: pass
+
+        formatted = end_date.strftime("%d-%m-%Y %H:%M")
+        await callback.message.answer(f"✅ VIP muvaffaqiyatli faollashtirildi!\nMuddat: {formatted} gacha.")
+        
+        # Foydalanuvchiga ogohlantirish bilan birga boradigan matn
+        u_kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="📦 Yuk Tashlash", callback_data="btn_user_send_yuk")]])
+        try:
+            await bot.send_message(
+                chat_id=int(found_uid), 
+                text=f"🎉 <b>Administrator to'lovingizni qabul qildi va tasdiqladi!</b>\n\n"
+                     f"Sizga yuk tashlash imkoniyati ochildi va guruh cheklovlaridan ozod bo'ldingiz.\n"
+                     f"⏱ VIP muddati: <code>{formatted}</code> gacha belgilandi.\n\n"
+                     f"⚠️ <b>DIQQAT:</b> <u>Belgilangan shu vaqtdan keyin siz avtomatik ravishda guruhlardan chiqarib yuborilasiz!</u> Obunani vaqtida uzaytirishni unutmang.",
+                reply_markup=u_kb
+            )
+        except: pass
+    else:
+        await callback.message.answer("❌ Xatolik: Foydalanuvchi ID topilmadi.")
     await state.clear()
 
 # --- FOYDALANUVCHILAR YUK TASHALASH TIZIMI (AVTO INTERVAL) ---
@@ -316,7 +384,6 @@ async def user_finish_yuk(message: types.Message, state: FSMContext):
     
     await message.answer("✅ <b>Tasdiqlandi! Yukingiz tizimga tushdi va guruhlarga muntazam ravishda avto-post qilinadi!</b>")
     
-    # Ilk postni darhol chiqarish
     bot_info = await bot.get_me()
     cap = get_premium_caption(yuk_text[:150] + "...", "AVTO YUK")
     kb = get_group_kb(bot_info.username, m_id)
@@ -330,7 +397,7 @@ async def user_finish_yuk(message: types.Message, state: FSMContext):
 async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     if callback.data == "btn_add_start_msg":
-        await callback.message.answer("⚙️ Yangi start xabarni yuboring:")
+        await callback.message.answer("⚙️ <b>Yangi start xabari matnini (HTML formatda) yuboring:</b>")
         await state.set_state(MadiWayStates.kutish_global_start)
     elif callback.data == "btn_kanal_tashlash":
         await callback.message.answer("📥 Kanal yukini yuboring (BEPUL KO'RILADI):")
@@ -358,7 +425,16 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         db = load_db()
         await callback.message.answer(f"📊 <b>Statistika:</b>\n\n👤 A'zolar: <code>{len(db['users'])}</code> ta\n👑 VIP: <code>{db.get('premium_count', 0)}</code> ta")
 
-# --- ADMIN: VIP / YUK RUXSATI BERISH (UNBAN TIZIMI BILAN) ---
+# --- ADMIN: GLOBAL START XABARINI SAQLASH ---
+@dp.message(MadiWayStates.kutish_global_start)
+async def save_start(message: types.Message, state: FSMContext):
+    new_msg = message.html_text
+    with open(START_MSG_FILE, "w", encoding="utf-8") as f:
+        f.write(new_msg)
+    await message.answer("✅ <b>Yangi start xabari muvaffaqiyatli saqlandi va faollashtirildi!</b>")
+    await state.clear()
+
+# --- ADMIN: MANUAL VIP BERISH TIZIMI ---
 @dp.message(MadiWayStates.giving_premium_username)
 async def admin_vip_user(message: types.Message, state: FSMContext):
     await state.update_data(target_user=message.text.replace("@", "").strip())
@@ -391,24 +467,23 @@ async def admin_finalize_vip(callback: types.CallbackQuery, state: FSMContext):
         db["premium_count"] = db.get("premium_count", 0) + 1
         save_db(db)
         
-        # IKKALA GURUXDAN HAM BAN BO'LSA OCHISH
         for gid in [NEW_GROUP_ID, GROUP_ID]:
             try: await bot.unban_chat_member(chat_id=gid, user_id=int(found_uid), only_if_banned=True)
             except: pass
 
         formatted = end_date.strftime("%d-%m-%Y %H:%M")
-        await callback.message.answer(f"✅ VIP va Yuk Huquqi Berildi!\n⏱ Muddat: {formatted} gacha.")
+        await callback.message.answer(f"✅ VIP berildi!\nMuddat: {formatted} gacha.")
         
         u_kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="📦 Yuk Tashlash", callback_data="btn_user_send_yuk")]])
         try:
             await bot.send_message(
                 chat_id=int(found_uid), 
-                text=f"🎉 <b>Administrator to'lovingizni qabul qildi va tasdiqladi!</b>\n\nSizga yuk tashlash imkoniyati ochildi va guruh cheklovlaridan ozod bo'ldingiz.\n⏱ VIP muddati: <code>{formatted}</code> gacha.",
+                text=f"🎉 <b>VIP faollashtirildi!</b>\n⏱ Muddat: <code>{formatted}</code> gacha.\n\n⚠️ Shu vaqtdan keyin siz avtomatik ravishda guruhlardan chiqarib yuborilasiz!",
                 reply_markup=u_kb
             )
         except: pass
     else:
-        await callback.message.answer("❌ Foydalanuvchi bazadan topilmadi!")
+        await callback.message.answer("❌ Foydalanuvchi topilmadi!")
     await state.clear()
 
 # --- ADMIN: 100 TA YUK YUBORISH (FLOOD LIMITSIZ) ---
@@ -420,7 +495,7 @@ async def yangi_guruh_100_yuk(message: types.Message, state: FSMContext):
     
     bot_info = await bot.get_me()
     cap = get_premium_caption(txt[:150] + "...")
-    await asyncio.sleep(0.4) # Flood-control joriy qilindi
+    await asyncio.sleep(0.4)
     await send_all(NEW_GROUP_ID, message, cap, get_group_kb(bot_info.username, m_id))
     await message.answer("✅ Yuk yangi guruhga limitlarsiz xavfsiz ketdi!")
     await state.clear()
@@ -471,7 +546,7 @@ async def chan_yuk(message: types.Message, state: FSMContext):
     ydb = load_yuk_db(); ydb[m_id] = txt; save_yuk_db(ydb)
     bot_info = await bot.get_me()
     await send_all(CHANNEL_ID, message, get_premium_caption(txt), get_group_kb(bot_info.username, m_id))
-    await message.answer("✅ Kanalga ketdi (Foydalanuvchilar bepul ko'rishadi).")
+    await message.answer("✅ Kanalga ketdi.")
     await state.clear()
 
 @dp.message(MadiWayStates.kutish_hamma_topic_yuk)
@@ -517,29 +592,22 @@ async def send_all(chat_id, message, caption, kb, t_id=None):
         else: return await bot.send_message(chat_id, caption, reply_markup=kb, message_thread_id=t_id)
     except Exception as e: return None
 
-@dp.message(MadiWayStates.kutish_global_start)
-async def save_start(message: types.Message, state: FSMContext):
-    await message.answer("✅ Saqlandi!")
-    await state.clear()
-
 @dp.message()
 async def auto_reply_handler(message: types.Message):
     if message.chat.type == "private" and message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
-        await message.answer(AUTO_PAYMENT_MESSAGE)
+        await message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
 
-# --- 🔄 FONDA ISHLOVCHI MULTI-GURUH CRON (KICK & AVTO INTERVAL TIZIMI) ---
+# --- 🔄 MULTI-GURUH CRON (KICK & AVTO INTERVAL TIZIMI) ---
 async def auto_cron_job():
     while True:
         try:
             now = datetime.now(UZB_TZ)
             
-            # 1. MUDDATI TUGAGANLARNI IKKALA GURUXDAN HAM CHIQARISH (KICK)
             db = load_db()
             for uid, info in list(db["users"].items()):
                 if info["premium_until"]:
                     until_dt = datetime.fromisoformat(info["premium_until"]).astimezone(UZB_TZ)
                     if now > until_dt:
-                        # Muddat tugasa ikkala guruhdan ham kick bo'ladi
                         for gid in [NEW_GROUP_ID, GROUP_ID]:
                             try:
                                 await bot.ban_chat_member(chat_id=gid, user_id=int(uid))
@@ -550,7 +618,6 @@ async def auto_cron_job():
                         try: await bot.send_message(chat_id=int(uid), text="⚠️ <b>VIP obunangiz muddati yakunlandi. Tizim sizni avtomatik ravishda guruhlardan chiqardi!</b>")
                         except: pass
 
-            # 2. FOYDALANUVCHILAR RE-POST INTERVALI (ASOSIY GURUH VA YANGI GURUH UCHUN)
             tasks = load_tasks()
             ydb = load_yuk_db()
             bot_info = await bot.get_me()
@@ -566,7 +633,6 @@ async def auto_cron_job():
                     if yuk_data:
                         cap = get_premium_caption(yuk_data["text"][:150] + "...", "🔂 AVTO RE-POST")
                         kb = get_group_kb(bot_info.username, task["yuk_id"])
-                        
                         chat = NEW_GROUP_ID if task["target_group"] == "new" else GROUP_ID
                         tid = task.get("target_topic", None)
                         
