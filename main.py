@@ -19,7 +19,12 @@ install_and_import("moviepy")  # Video va Audioni qayta ishlash uchun
 
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TPE1, TALB, APIC
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_audioclips
+
+# MoviePy v2 va v1 versiyalaridagi o'zgarishni hisobga olgan holda xavfsiz import:
+try:
+    from moviepy import VideoFileClip, AudioFileClip, concatenate_audioclips
+except ImportError:
+    from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_audioclips
 
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
