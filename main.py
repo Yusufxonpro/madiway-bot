@@ -77,10 +77,8 @@ def is_contains_reklama(text: str) -> bool:
     if not text:
         return False
     text_lower = text.lower()
-    # Havolalar tekshiruvi
     if "http" in text_lower or "t.me" in text_lower or "@" in text_lower or ".uz" in text_lower or ".ru" in text_lower or "t.me/" in text_lower:
         return True
-    # Taqiqlangan so'zlar tekshiruvi
     if any(bad in text_lower for bad in BAD_WORDS):
         return True
     return False
@@ -135,7 +133,7 @@ def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡�
 def get_group_kb(bot_user, msg_id=None):
     buttons = []
     if msg_id and bot_user: 
-        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смотреть | 🇬🇧 View", url=f"https://t.me/{bot_user}?start={msg_id}")])
+        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смоtreть", url=f"https://t.me/{bot_user}?start={msg_id}")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_guruh_tanlash_kb():
@@ -153,7 +151,6 @@ def get_tariff_keyboard():
     ])
 
 class MadiWayStates(StatesGroup):
-    kutish_global_start = State()
     kutish_kanal_yuk = State()
     kutish_bitta_topic_yuk = State()
     kutish_hamma_topic_yuk = State()
@@ -171,10 +168,10 @@ class MadiWayStates(StatesGroup):
     user_kutish_tel = State()       
     admin_quick_vip_days = State()
 
-# --- START BUYRUG'I ---
+# --- START BUYRUG'I (TO'LIQ TUZATILDI) ---
 @dp.message(Command("start"), F.chat.type == "private")
 async def start_cmd(message: types.Message, command: CommandObject, state: FSMContext):
-    await state.clear()
+    await state.clear()  # Tiqilib qolishni oldini olish uchun holatni tozalaymiz
     user_id = message.from_user.id
     
     db = load_db()
@@ -429,8 +426,9 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(MadiWayStates.kutish_music_upload)
 
     elif callback.data == "btn_give_vip":
-        await callback.message.answer("🔑 VIP berish uchun Telegram ID yozing:")
+        await callback.message.answer("🔑 VIP berish uchun Telegram ID yoki Username yozing:")
         await state.set_state(MadiWayStates.giving_premium_username)
+        
     elif callback.data == "btn_stats":
         db = load_db()
         await callback.message.answer(f"📊 A'zolar: {len(db['users'])}\nVIP: {db.get('premium_count', 0)}")
@@ -578,7 +576,7 @@ async def process_incoming_music_file(message: types.Message, state: FSMContext)
     await state.clear()
 
 
-# --- USER YUK TASHALASH TIZIMI (REKLAMA FILTRI BILAN SOZLASH) ---
+# --- USER YUK TASHALASH TIZIMI ---
 @dp.callback_query(F.data == "btn_user_send_yuk")
 async def user_send_yuk_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -619,7 +617,6 @@ async def user_get_payload(message: types.Message, state: FSMContext):
     text_check = message.text or message.caption or ""
     user_id = message.from_user.id
     
-    # [REKLAMA VA SO'KINISH FILTERI - INTEGRATSIYA QILINDI]
     if user_id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         if is_contains_reklama(text_check) or message.forward_date:
             await message.answer("❌ <b>Taqiqlangan xabar!</b> Yuk matnida reklama, link (havola), ssilka, kanal yoki haqoratli so'zlar aniqlandi. Iltimos, ularsiz toza matn ko'rinishida qayta yuboring:")
@@ -645,7 +642,6 @@ async def user_finish_yuk(message: types.Message, state: FSMContext):
     phone = message.text or ""
     user_id = message.from_user.id
     
-    # Telefon kiritish joyida ham havola tekshirish (Xavfsizlik uchun)
     if user_id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         if is_contains_reklama(phone):
             await message.answer("❌ Telefon raqami noto'g'ri! Havolalarsiz faqat raqam ko'rinishida yozing:")
@@ -706,6 +702,21 @@ async def send_channel_media_package(msg_obj, media_data, state: FSMContext):
     await msg_obj.answer("✅ Rasm/Fayl kanallarga muvaffaqiyatli yuklandi.")
     await state.clear()
 
+
+# --- VIP BERISH TIZIMI (FSM QULFLANISHI SHU YERDA TUZATILDI) ---
+@dp.message(MadiWayStates.giving_premium_username)
+async def admin_get_vip_user(message: types.Message, state: FSMContext):
+    target = message.text.strip()
+    await state.update_data(target_user=target)
+    
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="🗓 1 Kun (Oddiy)", callback_data="set_user_vip_1_oddiy")],
+        [types.InlineKeyboardButton(text="🗓 30 Kun (Oddiy)", callback_data="set_user_vip_30_oddiy")],
+        [types.InlineKeyboardButton(text="🚀 1 Kun (Tezkor 12 min)", callback_data="set_user_vip_1_tezkor")]
+    ])
+    await message.answer(f"👤 Foydalanuvchi: {target}\nVIP muddatini tanlang:", reply_markup=kb)
+    await state.set_state(MadiWayStates.giving_premium_days)
+
 @dp.callback_query(MadiWayStates.giving_premium_days, F.data.startswith("set_user_vip_"))
 async def admin_finalize_vip(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -713,21 +724,32 @@ async def admin_finalize_vip(callback: types.CallbackQuery, state: FSMContext):
     days, itype = int(parts[3]), parts[4]
     data = await state.get_data()
     target = data.get("target_user")
+    
     db = load_db()
     found_uid = None
     for uid, info in db["users"].items():
         if uid == target or info["username"].lower() == target.lower():
             found_uid = uid
             break
+            
     if found_uid:
         end_date = datetime.now(UZB_TZ) + timedelta(days=days)
         db["users"][found_uid]["premium_until"] = end_date.isoformat()
         db["users"][found_uid]["interval_type"] = itype
         db["premium_count"] = db.get("premium_count", 0) + 1
         save_db(db)
-        await callback.message.answer(f"✅ VIP berildi!")
+        await callback.message.answer(f"✅ {target} ga {days} kunlik [{itype}] VIP muvaffaqiyatli berildi!")
+        
+        try:
+            await bot.send_message(chat_id=int(found_uid), text=f"🎉 Administrator sizga {days} kunlik VIP maqomini taqdim etdi!")
+        except: pass
+    else:
+        await callback.message.answer("❌ Foydalanuvchi ma'lumotlar bazasidan topilmadi. Avval botga start bosgan bo'lishi kerak!")
+        
     await state.clear()
 
+
+# --- PRIVATE AUTO REPLY HANDLER ---
 @dp.message(F.chat.type == "private")
 async def auto_reply_handler(message: types.Message):
     if message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
