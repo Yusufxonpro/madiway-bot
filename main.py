@@ -3,6 +3,8 @@ import logging
 import asyncio
 import os
 import sys
+import subprocess
+import shutil
 
 # --- ZARURIY KUTUBXONALARNI TEKSHIRISH VA O'RNATISH ---
 def install_and_import(package, module_name=None):
@@ -11,16 +13,15 @@ def install_and_import(package, module_name=None):
     try:
         __import__(module_name)
     except ModuleNotFoundError:
-        import subprocess
         subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 install_and_import("mutagen")
-install_and_import("moviepy")  # Video va Audioni qayta ishlash uchun
+install_and_import("moviepy")
 
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TPE1, TALB, APIC
 
-# MoviePy v2 va v1 versiyalaridagi o'zgarishni hisobga olgan holda xavfsiz import:
+# MoviePy v2 va v1 versiyalaridagi o'zgarishni hisobga olgan holda xavfsiz import
 try:
     from moviepy import VideoFileClip, AudioFileClip, concatenate_audioclips
 except ImportError:
@@ -62,7 +63,7 @@ USERS_DB_FILE = "users_database.json"
 YUK_DB_FILE = "yuklar_database.json"
 AUTO_TASKS_FILE = "auto_tasks_database.json"
 MUSIC_COVER_IMAGE = "music_cover.jpg" 
-AUDIO_WATERMARK_FILE = "audio_watermark.mp3"  # Ovozli belgi fayli
+AUDIO_WATERMARK_FILE = "audio_watermark.mp3"
 
 UZB_TZ = timezone(timedelta(hours=5))
 MEDIA_GROUPS_CACHE: Dict[str, List[types.Message]] = {}
@@ -146,7 +147,7 @@ def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡�
 def get_group_kb(bot_user, msg_id=None):
     buttons = []
     if msg_id and bot_user: 
-        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смоtreть", url=f"https://t.me/{bot_user}?start={msg_id}")])
+        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смотреть", url=f"https://t.me/{bot_user}?start={msg_id}")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_guruh_tanlash_kb():
@@ -165,13 +166,14 @@ def get_tariff_keyboard():
 
 class MadiWayStates(StatesGroup):
     kutish_kanal_yuk = State()
+    adm_mway_target_topic = State()
     kutish_adm_madiway_all = State()
     kutish_adm_inter_all = State()
     
     kutish_music_cover = State()
     kutish_music_audio = State()
     kutish_music_desc = State()
-    kutish_watermark_audio = State() # Ovozli belgi kutish holati
+    kutish_watermark_audio = State()
 
     giving_premium_username = State()
     giving_premium_days = State()
@@ -182,7 +184,7 @@ class MadiWayStates(StatesGroup):
     user_kutish_tel = State()       
     admin_quick_vip_days = State()
 
-# --- START BUYRUG'I VA SOZLAMALARI ---
+# --- START BUYRUG'I VA PANELI ---
 @dp.message(Command("start"), F.chat.type == "private")
 async def start_cmd(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()  
@@ -239,7 +241,6 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             await message.answer(caption)
         return
 
-    # ADMIN PANEL
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="🚛 MADIWAY guruhiga yuklash", callback_data="btn_adm_madiway")],
@@ -247,16 +248,15 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             [types.InlineKeyboardButton(text="📸 KANALGA rasm/fayl yuklash", callback_data="btn_kanal_tashlash")],
             [types.InlineKeyboardButton(text="🖼 Musiqa uchun Doimiy Muqova", callback_data="btn_music_cover")],
             [types.InlineKeyboardButton(text="🎙 Audio Intro (Watermark)", callback_data="btn_audio_watermark")],
-            [types.InlineKeyboardButton(text="🎵 Musiqa Kanalga (MP3/Video/Ogg)", callback_data="btn_adm_music")],
+            [types.InlineKeyboardButton(text="🎵 Musiqa Kanalga (MP3/Video)", callback_data="btn_adm_music")],
             [
                 types.InlineKeyboardButton(text="MadiWay Gruppa", url=f"https://t.me/{GROUP_USER}"),
                 types.InlineKeyboardButton(text="MadiWay Kanal", url=f"https://t.me/{CHANNEL_USER}")
             ],
             [types.InlineKeyboardButton(text="🔑 VIP Berish", callback_data="btn_give_vip"), types.InlineKeyboardButton(text="📊 Statistika", callback_data="btn_stats")]
         ])
-        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠ＩＮ 𝗣𝗔𝗡Ｅ𝗟</b>\n\nBarcha boshqaruv tugmalari alohida qilib sozlandi:", reply_markup=kb)
+        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠ＩＮ 𝗣𝗔𝗡Ｅ𝗟</b>\n\nBarcha eski va yangi tugmalar to'liq integratsiya qilindi:", reply_markup=kb)
     else:
-        # Foydalanuvchi start menyusi
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="💰 Tariflar va VIP sotib olish", callback_data="btn_show_tariffs")],
             [types.InlineKeyboardButton(text="📦 Yuk Tashlash (Avto-Post)", callback_data="btn_user_send_yuk")],
@@ -265,26 +265,24 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
                 types.InlineKeyboardButton(text="International Guruh", url=f"https://t.me/{NEW_GROUP_USER}")
             ]
         ])
-        await message.answer(text="🏔 <b>MadiWay logistika avtomatizatsiya botiga xush kelibsiz!</b>\n\nBot orqali yuklaringizni guruhlarga avtomatik re-post qildirishingiz va VIP imkoniyatlarga ega bo'lishingiz mumkin. Quyidagi menyudan foydalaning:", reply_markup=kb)
+        await message.answer(text="🏔 <b>MadiWay logistika avtomatizatsiya botiga xush kelibsiz!</b>\n\nQuyidagi menyudan foydalaning:", reply_markup=kb)
 
-# --- MODERATOR & MADINA GURUHINI TOZALASH ---
+# --- REKLAMA FILTRI ---
 @dp.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_moderator_handler(message: types.Message):
     if message.new_chat_members or message.left_chat_member:
         try: await message.delete()
         except: pass
         return
-        
     user_id = message.from_user.id
     if user_id in [ADMIN_ID, MADIWAY_ADMIN_ID]: return
-        
     msg_text = message.text or message.caption or ""
     if message.chat.id in [int(GROUP_ID), int(NEW_GROUP_ID), int(MADINA_GROUP_ID)]:
         if is_contains_reklama(msg_text) or message.forward_date:
             try: await message.delete()
             except: pass
 
-# --- TARIFLAR VA VIP PROCESSI ---
+# --- TARIFLAR CALLBACKS ---
 @dp.callback_query(F.data == "btn_show_tariffs")
 async def show_tariffs_menu(callback: types.CallbackQuery):
     await callback.answer()
@@ -357,7 +355,7 @@ async def admin_finalize_quick_vip(callback: types.CallbackQuery, state: FSMCont
             except: pass
 
         formatted = end_date.strftime("%d-%m-%Y %H:%M")
-        await callback.message.answer(f"✅ VIP faollashtirildi!")
+        await callback.message.answer(f"✅ VIP muvaffaqiyatli faollashtirildi!")
         
         invite_buttons = [
             [types.InlineKeyboardButton(text="🌍 International Logistik Guruhiga Kirish", url=f"https://t.me/{NEW_GROUP_USER}")],
@@ -372,7 +370,6 @@ async def collect_media_group_data(messages: List[types.Message]) -> dict:
     caption_text = next((msg.html_text for msg in messages if msg.html_text), "")
     if not caption_text:
         caption_text = next((msg.caption for msg in messages if msg.caption), "")
-        
     media_list = []
     for msg in messages:
         if msg.photo: media_list.append({"type": "photo", "file_id": msg.photo[-1].file_id})
@@ -405,12 +402,12 @@ async def send_single_media_direct(chat_id, m_type, file_id, caption, kb=None, t
     elif m_type == "video": return await bot.send_video(chat_id, file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
     elif m_type == "document": return await bot.send_document(chat_id, file_id, caption=caption, reply_markup=kb, message_thread_id=t_id)
 
-# --- ADMIN TUGMALARI CALLBACK HANDLER ---
+# --- ADMIN PANEL CALLBACKS ---
 @dp.callback_query(F.data.startswith('btn_'))
 async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     if callback.data == "btn_kanal_tashlash":
-        await callback.message.answer("📥 <b>KANALGA</b> yuklash bo'limi! Rasm, Video yoki Albom yuboring (Premium Emojilar qo'llab-quvvatlanadi):")
+        await callback.message.answer("📥 <b>KANALGA</b> yuklash bo'limi! Rasm, Video yoki Albom yuboring:")
         await state.set_state(MadiWayStates.kutish_kanal_yuk)
         
     elif callback.data == "btn_adm_madiway":
@@ -419,26 +416,24 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("📍 <b>MADIWAY</b> guruhidan yuk joylanadigan bo'limni tanlang:", reply_markup=kb)
         
     elif callback.data == "btn_adm_inter":
-        await callback.message.answer("📥 <b>INTERNATIONAL LOGISTIK</b> guruhi uchun yukingizni yuboring (Matn, Rasm, Video yoki Albom):")
+        await callback.message.answer("📥 <b>INTERNATIONAL LOGISTIK</b> guruhi uchun yukingizni yuboring (Matn, Rasm, Video, Albom):")
         await state.set_state(MadiWayStates.kutish_adm_inter_all)
 
     elif callback.data == "btn_music_cover":
-        await callback.message.answer("📸 Musiqa muqovasi (Rasm) yuboring. Keyingi barcha MP3-lar shu rasm bilan kanallarga chiqadi:")
+        await callback.message.answer("📸 Musiqa muqovasi (Rasm) yuboring. Keyingi hamma MP3-lar shu rasm bilan kanallarga chiqadi:")
         await state.set_state(MadiWayStates.kutish_music_cover)
 
     elif callback.data == "btn_audio_watermark":
         status = "🔴 Yuklanmagan"
-        if os.path.exists(AUDIO_WATERMARK_FILE):
-            status = "🟢 Faol (Mavjud)"
-        
+        if os.path.exists(AUDIO_WATERMARK_FILE): status = "🟢 Faol (Mavjud)"
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🎙 Yangi Ovoz/O'zgartirish (Change)", callback_data="wmark_change")],
-            [types.InlineKeyboardButton(text="🗑 O'chirish (Delete)", callback_data="wmark_delete")]
+            [types.InlineKeyboardButton(text="🎙 Yangi Ovoz/O'zgartirish", callback_data="wmark_change")],
+            [types.InlineKeyboardButton(text="🗑 O'chirish", callback_data="wmark_delete")]
         ])
-        await callback.message.answer(f"🎙 <b>Audio Watermark (Ovozli belgi) sozlamalari:</b>\n\nHozirgi holat: {status}\nMusiqalar boshiga 5 soniyalik ushbu ovoz avtomat qo'shiladi.", reply_markup=kb)
+        await callback.message.answer(f"🎙 <b>Audio Watermark sozlamalari:</b>\nHolati: {status}", reply_markup=kb)
 
     elif callback.data == "btn_adm_music":
-        await callback.message.answer("🎵 Musiqa kanaliga joylash uchun <b>MP3 (Audio) yoki MP4 (Video)</b> fayl yuboring (Watermark avtomat qo'shiladi):")
+        await callback.message.answer("🎵 Musiqa kanaliga joylash uchun <b>MP3 (Audio) yoki MP4 (Video)</b> fayl yuboring:")
         await state.set_state(MadiWayStates.kutish_music_audio)
 
     elif callback.data == "btn_give_vip":
@@ -449,20 +444,27 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         db = load_db()
         await callback.message.answer(f"📊 A'zolar: {len(db['users'])}\nVIP obunachilar: {db.get('premium_count', 0)}")
 
-# --- AUDIO WATERMARK BOSHQARUVI ---
+@dp.callback_query(F.data.startswith("adm_mw_topic_"))
+async def admin_madiway_topic_select(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    tid = int(callback.data.split("_")[3])
+    await state.update_data(adm_mway_target_topic=tid)
+    await callback.message.answer("📥 Endi MadiWay guruhi uchun yuk materialini yuboring:")
+    await state.set_state(MadiWayStates.kutish_adm_madiway_all)
+
+# --- WATERMARK SOZLAMALARI ---
 @dp.callback_query(F.data.startswith("wmark_"))
 async def watermark_actions(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     action = callback.data.split("_")[1]
-    
     if action == "delete":
         if os.path.exists(AUDIO_WATERMARK_FILE):
             os.remove(AUDIO_WATERMARK_FILE)
-            await callback.message.answer("🗑 Ovozli belgi (Watermark) muvaffaqiyatli o'chirildi!")
+            await callback.message.answer("🗑 Ovozli belgi o'chirildi!")
         else:
-            await callback.message.answer("⚠️ O'chirish uchun faol ovoz topilmadi.")
+            await callback.message.answer("⚠️ Faol ovoz topilmadi.")
     elif action == "change":
-        await callback.message.answer("🎙 <b>Musiqalar boshiga qo'shiladigan ovozli faylni (MP3 yoki Voice) yuboring:</b>")
+        await callback.message.answer("🎙 Musiqalar boshiga qo'shiladigan ovozli faylni (MP3/Voice) yuboring:")
         await state.set_state(MadiWayStates.kutish_watermark_audio)
 
 @dp.message(MadiWayStates.kutish_watermark_audio, F.audio | F.voice)
@@ -471,14 +473,11 @@ async def save_watermark_audio_handler(message: types.Message, state: FSMContext
     try:
         file_id = message.audio.file_id if message.audio else message.voice.file_id
         file_info = await bot.get_file(file_id)
-        
-        if os.path.exists(AUDIO_WATERMARK_FILE): 
-            os.remove(AUDIO_WATERMARK_FILE)
-            
+        if os.path.exists(AUDIO_WATERMARK_FILE): os.remove(AUDIO_WATERMARK_FILE)
         await bot.download_file(file_info.file_path, AUDIO_WATERMARK_FILE)
-        await status_msg.edit("✅ Ovozli belgi (Watermark) qabul qilindi va muvaffaqiyatli saqlandi! Endi u barcha mp3-lar boshiga qo'shiladi.")
+        await status_msg.edit("✅ Ovozli belgi (Watermark) muvaffaqiyatli saqlandi!")
     except Exception as e:
-        await status_msg.edit(f"❌ Ovozni saqlashda xato: {e}")
+        await status_msg.edit(f"❌ Xato: {e}")
     await state.clear()
 
 async def generic_media_group_processor(mg_id: str, state: FSMContext, handler_func):
@@ -489,7 +488,7 @@ async def generic_media_group_processor(mg_id: str, state: FSMContext, handler_f
     await handler_func(messages[0], media_data, state)
     if mg_id in MEDIA_GROUPS_CACHE: del MEDIA_GROUPS_CACHE[mg_id]
 
-# --- ADMIN: MADIWAY POSTING ---
+# --- POSTLARNI SAQLASH VA YUKLASH ---
 @dp.message(MadiWayStates.kutish_adm_madiway_all)
 async def process_adm_madiway_payload(message: types.Message, state: FSMContext):
     if message.media_group_id:
@@ -506,18 +505,15 @@ async def save_and_send_adm_madiway(msg_obj, media_data, state: FSMContext):
     sdata = await state.get_data()
     tid = sdata.get("adm_mway_target_topic", 1)
     m_id = f"adm_mw_{msg_obj.message_id}"
-    
     ydb = load_yuk_db()
     ydb[m_id] = {"text": media_data["text"], "media_list": media_data["media_list"], "is_new_group": False, "phone": "Admin"}
     save_yuk_db(ydb)
-    
     bot_info = await bot.get_me()
     cap = get_premium_caption(media_data["text"], "ADMIN YUK", is_new_group=False)
     await send_universal_media_package(GROUP_ID, media_data, cap, get_group_kb(bot_info.username, m_id), tid)
-    await msg_obj.answer("✅ MadiWay guruhiga yuk muvaffaqiyatli joylandi!")
+    await msg_obj.answer("✅ MadiWay guruhiga yuklandi!")
     await state.clear()
 
-# --- ADMIN: INTERNATIONAL POSTING ---
 @dp.message(MadiWayStates.kutish_adm_inter_all)
 async def process_adm_inter_payload(message: types.Message, state: FSMContext):
     if message.media_group_id:
@@ -535,14 +531,12 @@ async def save_and_send_adm_inter(msg_obj, media_data, state: FSMContext):
     ydb = load_yuk_db()
     ydb[m_id] = {"text": media_data["text"], "media_list": media_data["media_list"], "is_new_group": True, "phone": "Admin"}
     save_yuk_db(ydb)
-    
     bot_info = await bot.get_me()
     cap = get_premium_caption(media_data["text"], "ADMIN YUK", is_new_group=True)
     await send_universal_media_package(NEW_GROUP_ID, media_data, cap, get_group_kb(bot_info.username, m_id))
-    await msg_obj.answer("✅ International guruhiga yuk muvaffaqiyatli joylandi!")
+    await msg_obj.answer("✅ International guruhiga yuklandi!")
     await state.clear()
 
-# --- DOIMIY MUSIQA RASMINI SAQLASH TIZIMI ---
 @dp.message(MadiWayStates.kutish_music_cover, F.photo)
 async def save_music_cover_handler(message: types.Message, state: FSMContext):
     try:
@@ -550,19 +544,19 @@ async def save_music_cover_handler(message: types.Message, state: FSMContext):
         file_info = await bot.get_file(photo.file_id)
         if os.path.exists(MUSIC_COVER_IMAGE): os.remove(MUSIC_COVER_IMAGE)
         await bot.download_file(file_info.file_path, MUSIC_COVER_IMAGE)
-        await message.answer("✅ Musiqa muqova rasmi saqlandi! Endi MP3-lar shu rasm bilan kanallarga chiqadi.")
+        await message.answer("✅ Musiqa muqova rasmi saqlandi!")
     except Exception as e:
         await message.answer(f"❌ Rasmni saqlashda xato: {e}")
     await state.clear()
 
-# --- 🎵 MUSIQA KANALI TIZIMI (WATERMARK AUDIO MIXER + VIDEO TO MP3 + OGG TIZIMI) ---
+# --- 🎵 TO'LIQ MUSIQA MIKSER VA FORMAT CONVERTER TIZIMI ---
 @dp.message(MadiWayStates.kutish_music_audio, F.audio | F.video)
 async def process_incoming_music_file(message: types.Message, state: FSMContext):
     if message.audio:
         await state.update_data(audio_file_id=message.audio.file_id, is_video_src=False)
     else:
         await state.update_data(audio_file_id=message.video.file_id, is_video_src=True)
-    await message.answer("📝 Endi ushbu musiqa uchun **Tavsif (Description)** matnini yuboring (Premium Emojilar ruxsat etilgan):")
+    await message.answer("📝 Endi musiqa uchun <b>Tavsif (Description)</b> matnini yuboring:")
     await state.set_state(MadiWayStates.kutish_music_desc)
 
 @dp.message(MadiWayStates.kutish_music_desc)
@@ -572,7 +566,7 @@ async def process_music_description(message: types.Message, state: FSMContext):
     file_id = sdata.get("audio_file_id")
     is_video = sdata.get("is_video_src", False)
     
-    status_msg = await message.answer("🔄 <code>Fayl yuklanmoqda va Ovozli belgi (Watermark) 5 soniyalik qilib musiqaga miks qilinmoqda...</code>")
+    status_msg = await message.answer("🔄 <code>Fayl qayta ishlanmoqda va Ovozli belgi (Watermark) 5 soniyalik qilib musiqaga miks qilinmoqda...</code>")
     
     input_file = "downloaded_source.mp4" if is_video else "downloaded_track.mp3"
     extracted_audio = "extracted_voice.mp3"
@@ -583,7 +577,6 @@ async def process_music_description(message: types.Message, state: FSMContext):
         file_info = await bot.get_file(file_id)
         await bot.download_file(file_info.file_path, input_file)
         
-        # 1. Manba video bo'lsa audio qilib olish, mp3 bo'lsa to'g'ridan-to'g'ri yuklash
         if is_video:
             video_clip = VideoFileClip(input_file)
             video_clip.audio.write_audiofile(extracted_audio, verbose=False, logger=None)
@@ -592,24 +585,20 @@ async def process_music_description(message: types.Message, state: FSMContext):
         else:
             main_audio_path = input_file
             
-        # 2. AUDIO MIXER TIZIMI (WATERMARK MIXING)
         main_clip = AudioFileClip(main_audio_path)
         
         if os.path.exists(AUDIO_WATERMARK_FILE):
-            # Watermark klipini yuklash va 5 soniyalik qilib qirqib olish
             wmark_clip = AudioFileClip(AUDIO_WATERMARK_FILE).subclip(0, 5)
-            # Ketma-ketlikda birlashtirish (Watermark + Asosiy qo'shiq)
             final_clip = concatenate_audioclips([wmark_clip, main_clip])
             final_clip.write_audiofile(output_mp3, verbose=False, logger=None)
             wmark_clip.close()
             final_clip.close()
         else:
-            # Watermark topilmasa qo'shiqning o'zini saqlash
             main_clip.write_audiofile(output_mp3, verbose=False, logger=None)
             
         main_clip.close()
 
-        # Meta-teglarni joylash va Muqovani yopishtirish
+        # META TAG VA MUQOVA JOYLASH
         try:
             audio_tags = MP3(output_mp3, ID3=ID3)
             try: audio_tags.add_tags()
@@ -622,14 +611,12 @@ async def process_music_description(message: types.Message, state: FSMContext):
             audio_tags.save()
         except: pass
 
-        # OGG formatiga o'tkazish
+        # OGG/VOICE FORMATIGA O'TKAZISH (FFMPEG)
         if os.path.exists(output_mp3):
-            import subprocess
             if os.path.exists(output_ogg): os.remove(output_ogg)
             try:
                 subprocess.run(['ffmpeg', '-i', output_mp3, '-acodec', 'libvorbis', output_ogg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except:
-                import shutil
                 shutil.copy(output_mp3, output_ogg)
 
         # Kanallarga yuborish
@@ -649,9 +636,8 @@ async def process_music_description(message: types.Message, state: FSMContext):
         bot_info = await bot.get_me()
         final_caption = f"🎵 <b>T.me/Yusufxonpro_Zxs Taqdim Etadi!</b>\n───────────────────────\n{desc_text}"
         await bot.send_message(chat_id=MUSIC_CHANNEL_ID, text=final_caption, reply_markup=get_group_kb(bot_info.username, m_id))
-        await status_msg.edit("✅ Musiqa boshiga 5 soniyalik audio belgi muvaffaqiyatli mikslandi hamda MP3 va OGG formatlarida kanalga joylandi!")
+        await status_msg.edit("✅ Musiqa boshiga 5 soniyalik audio belgi mikslandi hamda MP3 va OGG formatlarida kanalga joylandi!")
         
-        # Kesh fayllarni tozalash
         for f in [input_file, extracted_audio, output_mp3, output_ogg]:
             if os.path.exists(f): os.remove(f)
     except Exception as ex:
@@ -691,17 +677,16 @@ async def user_topic_tanladi(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     tid = int(callback.data.split("_")[2])
     await state.update_data(user_target_topic=tid)
-    await callback.message.answer("📥 <b>Yukingizni yuboring (Premium Emojilardan foydalanish mumkin):</b>")
+    await callback.message.answer("📥 <b>Yukingizni yuboring:</b>")
     await state.set_state(MadiWayStates.user_kutish_yuk)
 
 @dp.message(MadiWayStates.user_kutish_yuk)
 async def user_get_payload(message: types.Message, state: FSMContext):
     text_check = message.text or message.caption or ""
     user_id = message.from_user.id
-    
     if user_id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         if is_contains_reklama(text_check) or message.forward_date:
-            await message.answer("❌ Xabarda reklama yoki link aniqlandi. Havolalarsiz qayta yuboring:")
+            await message.answer("❌ Xabarda reklama aniqlandi. Havolalarsiz qayta yuboring:")
             return
 
     if message.media_group_id:
@@ -723,7 +708,6 @@ async def user_ask_phone_stage(msg_obj, media_data, state: FSMContext):
 async def user_finish_yuk(message: types.Message, state: FSMContext):
     phone = message.text or ""
     user_id = message.from_user.id
-    
     if user_id not in [ADMIN_ID, MADIWAY_ADMIN_ID] and is_contains_reklama(phone):
         await message.answer("❌ Noto'g'ri raqam formati!")
         return
@@ -757,7 +741,7 @@ async def user_finish_yuk(message: types.Message, state: FSMContext):
     await send_universal_media_package(chat, {"media_list": media_list}, cap, get_group_kb(bot_info.username, m_id), t_topic)
     await state.clear()
 
-# --- 📸 KANALGA RASM YUKLASH TIZIMI ---
+# --- 📸 KANALGA JOYLASH TIZIMI ---
 @dp.message(MadiWayStates.kutish_kanal_yuk)
 async def chan_yuk(message: types.Message, state: FSMContext):
     if message.media_group_id:
@@ -775,24 +759,22 @@ async def send_channel_media_package(msg_obj, media_data, state: FSMContext):
     ydb = load_yuk_db()
     ydb[m_id] = {"text": media_data["text"], "media_list": media_data["media_list"]}
     save_yuk_db(ydb)
-    
     bot_info = await bot.get_me()
     await send_universal_media_package(CHANNEL_ID, media_data, get_premium_caption(media_data["text"]), get_group_kb(bot_info.username, m_id))
-    await msg_obj.answer("✅ Rasm/Fayl kanallarga premium emojilar saqlangan holda muvaffaqiyatli yuklandi.")
+    await msg_obj.answer("✅ Kanalga muvaffaqiyatli yuklandi.")
     await state.clear()
 
-# --- VIP BERISH TIZIMI ---
+# --- VIP TIZIMI ---
 @dp.message(MadiWayStates.giving_premium_username)
 async def admin_get_vip_user(message: types.Message, state: FSMContext):
     target = message.text.strip()
     await state.update_data(target_user=target)
-    
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🗓 1 Kun (Oddiy)", callback_data="set_user_vip_1_oddiy")],
         [types.InlineKeyboardButton(text="🗓 30 Kun (Oddiy)", callback_data="set_user_vip_30_oddiy")],
         [types.InlineKeyboardButton(text="🚀 1 Kun (Tezkor 12 min)", callback_data="set_user_vip_1_tezkor")]
     ])
-    await message.answer(f"👤 Foydalanuvchi: {target}\nVIP muddatini tanlang:", reply_markup=kb)
+    await message.answer(f"Foydalanuvchi: {target}\nVIP muddatini tanlang:", reply_markup=kb)
     await state.set_state(MadiWayStates.giving_premium_days)
 
 @dp.callback_query(MadiWayStates.giving_premium_days, F.data.startswith("set_user_vip_"))
@@ -828,7 +810,7 @@ async def auto_reply_handler(message: types.Message):
     if message.from_user.id not in [ADMIN_ID, MADIWAY_ADMIN_ID]:
         await message.answer(AUTO_PAYMENT_MESSAGE, reply_markup=get_guruh_tanlash_kb())
 
-# --- AUTOMATION CRON JOB ---
+# --- CRON JOB AUTOMATION TIZIMI ---
 async def auto_cron_job():
     while True:
         try:
