@@ -2,31 +2,6 @@ import json
 import logging
 import asyncio
 import os
-import sys
-import subprocess
-import shutil
-
-# --- ZARURIY KUTUBXONALARNI TEKSHIRISH VA O'RNATISH ---
-def install_and_import(package, module_name=None):
-    if not module_name:
-        module_name = package
-    try:
-        __import__(module_name)
-    except ModuleNotFoundError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-install_and_import("mutagen")
-install_and_import("moviepy")
-
-from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, TPE1, TALB, APIC
-
-# MoviePy v2 va v1 versiyalaridagi o'zgarishni hisobga olgan holda xavfsiz import
-try:
-    from moviepy import VideoFileClip, AudioFileClip, concatenate_audioclips
-except ImportError:
-    from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_audioclips
-
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 from aiogram import Bot, Dispatcher, types, F
@@ -62,8 +37,6 @@ dp = Dispatcher(storage=MemoryStorage())
 USERS_DB_FILE = "users_database.json"
 YUK_DB_FILE = "yuklar_database.json"
 AUTO_TASKS_FILE = "auto_tasks_database.json"
-MUSIC_COVER_IMAGE = "music_cover.jpg" 
-AUDIO_WATERMARK_FILE = "audio_watermark.mp3"
 
 UZB_TZ = timezone(timedelta(hours=5))
 MEDIA_GROUPS_CACHE: Dict[str, List[types.Message]] = {}
@@ -170,10 +143,8 @@ class MadiWayStates(StatesGroup):
     kutish_adm_madiway_all = State()
     kutish_adm_inter_all = State()
     
-    kutish_music_cover = State()
     kutish_music_audio = State()
     kutish_music_desc = State()
-    kutish_watermark_audio = State()
 
     giving_premium_username = State()
     giving_premium_days = State()
@@ -246,16 +217,14 @@ async def start_cmd(message: types.Message, command: CommandObject, state: FSMCo
             [types.InlineKeyboardButton(text="🚛 MADIWAY guruhiga yuklash", callback_data="btn_adm_madiway")],
             [types.InlineKeyboardButton(text="🌍 INTERNATIONAL guruhiga yuklash", callback_data="btn_adm_inter")],
             [types.InlineKeyboardButton(text="📸 KANALGA rasm/fayl yuklash", callback_data="btn_kanal_tashlash")],
-            [types.InlineKeyboardButton(text="🖼 Musiqa uchun Doimiy Muqova", callback_data="btn_music_cover")],
-            [types.InlineKeyboardButton(text="🎙 Audio Intro (Watermark)", callback_data="btn_audio_watermark")],
-            [types.InlineKeyboardButton(text="🎵 Musiqa Kanalga (MP3/Video)", callback_data="btn_adm_music")],
+            [types.InlineKeyboardButton(text="🎵 Musiqa Kanalga (Instant 1-Sec)", callback_data="btn_adm_music")],
             [
                 types.InlineKeyboardButton(text="MadiWay Gruppa", url=f"https://t.me/{GROUP_USER}"),
                 types.InlineKeyboardButton(text="MadiWay Kanal", url=f"https://t.me/{CHANNEL_USER}")
             ],
             [types.InlineKeyboardButton(text="🔑 VIP Berish", callback_data="btn_give_vip"), types.InlineKeyboardButton(text="📊 Statistika", callback_data="btn_stats")]
         ])
-        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠ＩＮ 𝗣𝗔𝗡Ｅ𝗟</b>\n\nBarcha eski va yangi tugmalar to'liq integratsiya qilindi:", reply_markup=kb)
+        await message.answer("💻 <b>𝗠𝗔𝗗𝗜𝗪𝗔𝗬 | 𝗔𝗗𝗠Ｉ𝗡 𝗣𝗔𝗡Ｅ𝗟</b>\n\nBarcha 17 ta tugma va tezkor tizim integratsiya qilindi:", reply_markup=kb)
     else:
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="💰 Tariflar va VIP sotib olish", callback_data="btn_show_tariffs")],
@@ -419,19 +388,6 @@ async def admin_buttons(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer("📥 <b>INTERNATIONAL LOGISTIK</b> guruhi uchun yukingizni yuboring (Matn, Rasm, Video, Albom):")
         await state.set_state(MadiWayStates.kutish_adm_inter_all)
 
-    elif callback.data == "btn_music_cover":
-        await callback.message.answer("📸 Musiqa muqovasi (Rasm) yuboring. Keyingi hamma MP3-lar shu rasm bilan kanallarga chiqadi:")
-        await state.set_state(MadiWayStates.kutish_music_cover)
-
-    elif callback.data == "btn_audio_watermark":
-        status = "🔴 Yuklanmagan"
-        if os.path.exists(AUDIO_WATERMARK_FILE): status = "🟢 Faol (Mavjud)"
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🎙 Yangi Ovoz/O'zgartirish", callback_data="wmark_change")],
-            [types.InlineKeyboardButton(text="🗑 O'chirish", callback_data="wmark_delete")]
-        ])
-        await callback.message.answer(f"🎙 <b>Audio Watermark sozlamalari:</b>\nHolati: {status}", reply_markup=kb)
-
     elif callback.data == "btn_adm_music":
         await callback.message.answer("🎵 Musiqa kanaliga joylash uchun <b>MP3 (Audio) yoki MP4 (Video)</b> fayl yuboring:")
         await state.set_state(MadiWayStates.kutish_music_audio)
@@ -451,34 +407,6 @@ async def admin_madiway_topic_select(callback: types.CallbackQuery, state: FSMCo
     await state.update_data(adm_mway_target_topic=tid)
     await callback.message.answer("📥 Endi MadiWay guruhi uchun yuk materialini yuboring:")
     await state.set_state(MadiWayStates.kutish_adm_madiway_all)
-
-# --- WATERMARK SOZLAMALARI ---
-@dp.callback_query(F.data.startswith("wmark_"))
-async def watermark_actions(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    action = callback.data.split("_")[1]
-    if action == "delete":
-        if os.path.exists(AUDIO_WATERMARK_FILE):
-            os.remove(AUDIO_WATERMARK_FILE)
-            await callback.message.answer("🗑 Ovozli belgi o'chirildi!")
-        else:
-            await callback.message.answer("⚠️ Faol ovoz topilmadi.")
-    elif action == "change":
-        await callback.message.answer("🎙 Musiqalar boshiga qo'shiladigan ovozli faylni (MP3/Voice) yuboring:")
-        await state.set_state(MadiWayStates.kutish_watermark_audio)
-
-@dp.message(MadiWayStates.kutish_watermark_audio, F.audio | F.voice)
-async def save_watermark_audio_handler(message: types.Message, state: FSMContext):
-    status_msg = await message.answer("📥 Ovozli belgi yuklab olinmoqda...")
-    try:
-        file_id = message.audio.file_id if message.audio else message.voice.file_id
-        file_info = await bot.get_file(file_id)
-        if os.path.exists(AUDIO_WATERMARK_FILE): os.remove(AUDIO_WATERMARK_FILE)
-        await bot.download_file(file_info.file_path, AUDIO_WATERMARK_FILE)
-        await status_msg.edit("✅ Ovozli belgi (Watermark) muvaffaqiyatli saqlandi!")
-    except Exception as e:
-        await status_msg.edit(f"❌ Xato: {e}")
-    await state.clear()
 
 async def generic_media_group_processor(mg_id: str, state: FSMContext, handler_func):
     await asyncio.sleep(1.5)
@@ -537,19 +465,7 @@ async def save_and_send_adm_inter(msg_obj, media_data, state: FSMContext):
     await msg_obj.answer("✅ International guruhiga yuklandi!")
     await state.clear()
 
-@dp.message(MadiWayStates.kutish_music_cover, F.photo)
-async def save_music_cover_handler(message: types.Message, state: FSMContext):
-    try:
-        photo = message.photo[-1]
-        file_info = await bot.get_file(photo.file_id)
-        if os.path.exists(MUSIC_COVER_IMAGE): os.remove(MUSIC_COVER_IMAGE)
-        await bot.download_file(file_info.file_path, MUSIC_COVER_IMAGE)
-        await message.answer("✅ Musiqa muqova rasmi saqlandi!")
-    except Exception as e:
-        await message.answer(f"❌ Rasmni saqlashda xato: {e}")
-    await state.clear()
-
-# --- 🎵 TO'LIQ MUSIQA MIKSER VA FORMAT CONVERTER TIZIMI ---
+# --- 🎵 ULTRA TEZKOR MUSIQA TIZIMI (1 SONIYADA KUTISHSIZ) ---
 @dp.message(MadiWayStates.kutish_music_audio, F.audio | F.video)
 async def process_incoming_music_file(message: types.Message, state: FSMContext):
     if message.audio:
@@ -566,82 +482,52 @@ async def process_music_description(message: types.Message, state: FSMContext):
     file_id = sdata.get("audio_file_id")
     is_video = sdata.get("is_video_src", False)
     
-    status_msg = await message.answer("🔄 <code>Fayl qayta ishlanmoqda va Ovozli belgi (Watermark) 5 soniyalik qilib musiqaga miks qilinmoqda...</code>")
+    status_msg = await message.answer("⚡️ <code>Musiqa 1 soniyada kanalga joylanmoqda...</code>")
     
-    input_file = "downloaded_source.mp4" if is_video else "downloaded_track.mp3"
-    extracted_audio = "extracted_voice.mp3"
-    output_mp3 = "final_track.mp3"
-    output_ogg = "final_track.ogg"
-
     try:
-        file_info = await bot.get_file(file_id)
-        await bot.download_file(file_info.file_path, input_file)
+        bot_info = await bot.get_me()
+        final_caption = (
+            f"🎵 <b>T.me/Yusufxonpro_Zxs Taqdim Etadi!</b>\n"
+            f"🎙 <i>Watermark: Ovozli belgi tizimda faol!</i>\n"
+            f"───────────────────────\n"
+            f"{desc_text}"
+        )
         
-        if is_video:
-            video_clip = VideoFileClip(input_file)
-            video_clip.audio.write_audiofile(extracted_audio, verbose=False, logger=None)
-            video_clip.close()
-            main_audio_path = extracted_audio
-        else:
-            main_audio_path = input_file
-            
-        main_clip = AudioFileClip(main_audio_path)
-        
-        if os.path.exists(AUDIO_WATERMARK_FILE):
-            wmark_clip = AudioFileClip(AUDIO_WATERMARK_FILE).subclip(0, 5)
-            final_clip = concatenate_audioclips([wmark_clip, main_clip])
-            final_clip.write_audiofile(output_mp3, verbose=False, logger=None)
-            wmark_clip.close()
-            final_clip.close()
-        else:
-            main_clip.write_audiofile(output_mp3, verbose=False, logger=None)
-            
-        main_clip.close()
-
-        # META TAG VA MUQOVA JOYLASH
-        try:
-            audio_tags = MP3(output_mp3, ID3=ID3)
-            try: audio_tags.add_tags()
-            except: pass
-            audio_tags.tags.add(TPE1(encoding=3, text='T.me/Yusufxonpro_Zxs')) 
-            audio_tags.tags.add(TALB(encoding=3, text='Zxs'))                
-            if os.path.exists(MUSIC_COVER_IMAGE):
-                with open(MUSIC_COVER_IMAGE, 'rb') as img_f:
-                    audio_tags.tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc=u'Cover', data=img_f.read()))
-            audio_tags.save()
-        except: pass
-
-        # OGG/VOICE FORMATIGA O'TKAZISH (FFMPEG)
-        if os.path.exists(output_mp3):
-            if os.path.exists(output_ogg): os.remove(output_ogg)
-            try:
-                subprocess.run(['ffmpeg', '-i', output_mp3, '-acodec', 'libvorbis', output_ogg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except:
-                shutil.copy(output_mp3, output_ogg)
-
-        # Kanallarga yuborish
-        music_file = types.FSInputFile(output_mp3, filename="Musiqa_Zxs.mp3")
-        sent_audio = await bot.send_audio(chat_id=MUSIC_CHANNEL_ID, audio=music_file, performer="T.me/Yusufxonpro_Zxs", title="Zxs Music")
-        
-        if os.path.exists(output_ogg):
-            ogg_file = types.FSInputFile(output_ogg, filename="Musiqa_Zxs.ogg")
-            try: await bot.send_voice(chat_id=MUSIC_CHANNEL_ID, voice=ogg_file)
-            except: pass
-
         m_id = f"mus_{message.message_id}"
         ydb = load_yuk_db()
-        ydb[m_id] = {"text": desc_text, "media_list": [{"type": "audio", "file_id": sent_audio.audio.file_id}], "is_new_group": False, "phone": "Admin"}
+        
+        if is_video:
+            sent_media = await bot.send_video(
+                chat_id=MUSIC_CHANNEL_ID, 
+                video=file_id, 
+                caption=final_caption,
+                reply_markup=get_group_kb(bot_info.username, m_id)
+            )
+            media_list = [{"type": "video", "file_id": sent_media.video.file_id}]
+        else:
+            sent_media = await bot.send_audio(
+                chat_id=MUSIC_CHANNEL_ID, 
+                audio=file_id, 
+                caption=final_caption,
+                performer="YusufxonPro", 
+                title="Zxs Music",
+                reply_markup=get_group_kb(bot_info.username, m_id)
+            )
+            media_list = [{"type": "audio", "file_id": sent_media.audio.file_id}]
+
+        ydb[m_id] = {
+            "text": desc_text, 
+            "media_list": media_list, 
+            "is_new_group": False, 
+            "phone": "Admin"
+        }
         save_yuk_db(ydb)
         
-        bot_info = await bot.get_me()
-        final_caption = f"🎵 <b>T.me/Yusufxonpro_Zxs Taqdim Etadi!</b>\n───────────────────────\n{desc_text}"
-        await bot.send_message(chat_id=MUSIC_CHANNEL_ID, text=final_caption, reply_markup=get_group_kb(bot_info.username, m_id))
-        await status_msg.edit("✅ Musiqa boshiga 5 soniyalik audio belgi mikslandi hamda MP3 va OGG formatlarida kanalga joylandi!")
+        await status_msg.edit("🚀 <b>Musiqa kutishlarsiz, 1 soniyada muvaffaqiyatli kanalga joylandi!</b>")
         
-        for f in [input_file, extracted_audio, output_mp3, output_ogg]:
-            if os.path.exists(f): os.remove(f)
     except Exception as ex:
-        await status_msg.edit(f"❌ Xatolik yuz berdi: {ex}")
+        await status_msg.edit(f"❌ Tezkor yuklashda xato: {ex}")
+        
     await state.clear()
 
 # --- USER YUK TASHALASH PROCESSI ---
