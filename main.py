@@ -2,6 +2,18 @@ import json
 import logging
 import asyncio
 import os
+import sys
+
+# --- MUTAGEN KUTUBXONASINI AVTO-O'RNATISH TIZIMI ---
+try:
+    from mutagen.mp3 import MP3
+    from mutagen.id3 import ID3, TPE1, TALB, APIC
+except ModuleNotFoundError:
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "mutagen"])
+    from mutagen.mp3 import MP3
+    from mutagen.id3 import ID3, TPE1, TALB, APIC
+
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 from aiogram import Bot, Dispatcher, types, F
@@ -10,10 +22,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
-
-# MP3 Taglar bilan ishlash uchun
-from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, TPE1, TALB, APIC
 
 logging.basicConfig(level=logging.INFO)
 
@@ -133,7 +141,7 @@ def get_premium_caption(main_text, status_label="𝗬𝗨𝗞 𝗘𝗟𝗢𝗡�
 def get_group_kb(bot_user, msg_id=None):
     buttons = []
     if msg_id and bot_user: 
-        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смоtreть", url=f"https://t.me/{bot_user}?start={msg_id}")])
+        buttons.append([types.InlineKeyboardButton(text="🇺🇿 Ko'rish | 🇷🇺 Смотреть", url=f"https://t.me/{bot_user}?start={msg_id}")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_guruh_tanlash_kb():
@@ -168,10 +176,10 @@ class MadiWayStates(StatesGroup):
     user_kutish_tel = State()       
     admin_quick_vip_days = State()
 
-# --- START BUYRUG'I (TO'LIQ TUZATILDI) ---
+# --- START BUYRUG'I ---
 @dp.message(Command("start"), F.chat.type == "private")
 async def start_cmd(message: types.Message, command: CommandObject, state: FSMContext):
-    await state.clear()  # Tiqilib qolishni oldini olish uchun holatni tozalaymiz
+    await state.clear()  
     user_id = message.from_user.id
     
     db = load_db()
@@ -565,7 +573,7 @@ async def process_incoming_music_file(message: types.Message, state: FSMContext)
         save_yuk_db(ydb)
         
         bot_info = await bot.get_me()
-        final_caption = f"🎵 <b>T.me/Yusufxonpro_Zxs Tarbdim Etadi!</b>\n───────────────────────\n{caption_text}"
+        final_caption = f"🎵 <b>T.me/Yusufxonpro_Zxs Taqdim Etadi!</b>\n───────────────────────\n{caption_text}"
         await bot.send_message(chat_id=MUSIC_CHANNEL_ID, text=final_caption, reply_markup=get_group_kb(bot_info.username, m_id))
         await status_msg.edit("✅ Musiqa t.me/Yusufxonpro_Zxs kanaliga yuklandi!")
         
@@ -703,7 +711,7 @@ async def send_channel_media_package(msg_obj, media_data, state: FSMContext):
     await state.clear()
 
 
-# --- VIP BERISH TIZIMI (FSM QULFLANISHI SHU YERDA TUZATILDI) ---
+# --- VIP BERISH TIZIMI ---
 @dp.message(MadiWayStates.giving_premium_username)
 async def admin_get_vip_user(message: types.Message, state: FSMContext):
     target = message.text.strip()
